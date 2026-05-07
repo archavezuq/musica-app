@@ -1,10 +1,10 @@
 {
   "files": {
-    "main.js": "/musica-app/static/js/main.fc77d5c3.js",
+    "main.js": "/musica-app/static/js/main.e9f80c00.js",
     "index.html": "/musica-app/index.html",
-    "main.fc77d5c3.js.map": "/musica-app/static/js/main.fc77d5c3.js.map"
+    "main.e9f80c00.js.map": "/musica-app/static/js/main.e9f80c00.js.map"
   },
   "entrypoints": [
-    "static/js/main.fc77d5c3.js"
+    "static/js/main.e9f80c00.js"
   ]
 }
