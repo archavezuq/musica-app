@@ -1,0 +1,25 @@
+{
+  "short_name": "Atrile",
+  "name": "Atrile — Tu práctica musical",
+  "description": "Práctica musical inteligente para estudiantes y maestros",
+  "icons": [
+    {
+      "src": "app-icon-512-oscuro.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "atrile-mark-oscuro.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ],
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#1a2e22",
+  "theme_color": "#1a2e22",
+  "lang": "es",
+  "orientation": "portrait"
+}
