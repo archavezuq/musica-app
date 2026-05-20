@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Política de Privacidad — Atrile</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: "Lora", Georgia, serif;
+      background: #f5f2eb;
+      color: #0f1d15;
+      line-height: 1.8;
+      font-size: 16px;
+    }
+    header {
+      background: #1a2e22;
+      padding: 28px 24px;
+      text-align: center;
+    }
+    header h1 {
+      font-family: "Playfair Display", Georgia, serif;
+      color: #e8e4d8;
+      font-size: 26px;
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+    header p {
+      color: #8fbc8f;
+      font-size: 13px;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+    }
+    main {
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 40px 24px 80px;
+    }
+    .updated {
+      color: #6b8f6b;
+      font-size: 13px;
+      margin-bottom: 32px;
+    }
+    h2 {
+      font-family: "Playfair Display", Georgia, serif;
+      color: #1a2e22;
+      font-size: 20px;
+      font-weight: 700;
+      margin: 36px 0 12px;
+      padding-bottom: 6px;
+      border-bottom: 2px solid #c8d5c0;
+    }
+    h3 {
+      font-family: "Playfair Display", Georgia, serif;
+      color: #2d4a35;
+      font-size: 16px;
+      font-weight: 600;
+      margin: 20px 0 8px;
+    }
+    p { margin-bottom: 14px; }
+    ul { margin: 8px 0 14px 20px; }
+    li { margin-bottom: 6px; }
+    .highlight {
+      background: #e8f0e0;
+      border-left: 4px solid #4a7c59;
+      border-radius: 0 8px 8px 0;
+      padding: 14px 18px;
+      margin: 20px 0;
+      font-size: 15px;
+    }
+    .highlight strong { color: #1a2e22; }
+    a { color: #4a7c59; }
+    footer {
+      background: #1a2e22;
+      color: #6b8f6b;
+      text-align: center;
+      font-size: 13px;
+      padding: 24px;
+    }
+    footer a { color: #8fbc8f; }
+  </style>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=Lora:wght@400;600&display=swap" rel="stylesheet" />
+</head>
+<body>
+
+<header>
+  <h1>Política de Privacidad</h1>
+  <p>Atrile · Práctica Musical Inteligente</p>
+</header>
+
+<main>
+  <p class="updated">Última actualización: mayo de 2026</p>
+
+  <p>Esta Política de Privacidad describe cómo <strong>Atrile</strong> ("la App", "nosotros") recopila, usa y protege la información personal de quienes usan la aplicación, tanto estudiantes como docentes.</p>
+
+  <div class="highlight">
+    <strong>Resumen:</strong> Atrile recopila únicamente los datos necesarios para funcionar. No vendemos información personal a terceros. Las grabaciones de audio y video se procesan localmente en tu dispositivo y no se suben a nuestros servidores.
+  </div>
+
+  <!-- 1 -->
+  <h2>1. Responsable del tratamiento</h2>
+  <p>Atrile es desarrollada y operada de forma independiente. Para cualquier consulta relacionada con privacidad, puedes escribirnos a: <a href="mailto:supportatrile@gmail.com">supportatrile@gmail.com</a></p>
+
+  <!-- 2 -->
+  <h2>2. Datos que recopilamos</h2>
+
+  <h3>2.1 Datos de cuenta (Google)</h3>
+  <p>Si inicias sesión con Google, obtenemos de manera automática:</p>
+  <ul>
+    <li>Nombre de pantalla</li>
+    <li>Dirección de correo electrónico</li>
+    <li>Foto de perfil (URL pública de Google)</li>
+  </ul>
+  <p>Esta información se almacena en Firebase Firestore para sincronizar tu cuenta entre dispositivos.</p>
+
+  <h3>2.2 Código de estudiante</h3>
+  <p>Cada usuario recibe un código único de 6 caracteres generado aleatoriamente. Este código permite a un docente vincularse contigo para enviarte planes de clase y notas de práctica. <strong>El código no contiene información personal identificable.</strong></p>
+
+  <h3>2.3 Datos de práctica</h3>
+  <p>La App almacena en tu dispositivo (localStorage) y opcionalmente en la nube (Firestore):</p>
+  <ul>
+    <li>Notas de cada bloque de práctica</li>
+    <li>Tiempos de práctica por sesión</li>
+    <li>Metas diarias y mensuales</li>
+    <li>Links de referencia por sesión</li>
+  </ul>
+
+  <h3>2.4 Comunicación maestro-estudiante</h3>
+  <p>Los docentes pueden enviar:</p>
+  <ul>
+    <li><strong>Notas de clase:</strong> mensajes de texto dirigidos al estudiante, almacenados en Firestore bajo su código de estudiante.</li>
+    <li><strong>Plan de clase:</strong> contenido del plan diario, almacenado en Firestore.</li>
+  </ul>
+  <p>Estas notas son visibles únicamente para el estudiante destinatario y el docente que las envió.</p>
+
+  <h3>2.5 Grabaciones de audio y video</h3>
+  <p>La función de grabación de sesión procesa el audio y video <strong>exclusivamente en tu dispositivo</strong>. Las grabaciones no se suben a ningún servidor de Atrile. Su almacenamiento es responsabilidad del usuario.</p>
+
+  <h3>2.6 Preferencias de la App</h3>
+  <p>Se almacenan localmente en tu dispositivo: idioma seleccionado y preferencia de modo claro/oscuro.</p>
+
+  <!-- 3 -->
+  <h2>3. Cómo usamos la información</h2>
+  <ul>
+    <li>Autenticar tu identidad y mantener tu sesión activa</li>
+    <li>Sincronizar tu código de estudiante entre dispositivos</li>
+    <li>Entregar las notas y planes de clase de tu docente</li>
+    <li>Mostrar estadísticas de práctica dentro de la App</li>
+    <li>Mejorar la experiencia de usuario</li>
+  </ul>
+  <p><strong>No usamos tus datos para publicidad, perfilado comercial ni los compartimos con terceros sin tu consentimiento.</strong></p>
+
+  <!-- 4 -->
+  <h2>4. Almacenamiento y terceros</h2>
+  <p>Atrile utiliza los siguientes servicios de Google:</p>
+  <ul>
+    <li><strong>Firebase Authentication:</strong> para el inicio de sesión con Google.</li>
+    <li><strong>Cloud Firestore:</strong> para almacenar notas, planes de clase y datos de sincronización.</li>
+  </ul>
+  <p>Estos servicios están sujetos a la <a href="https://policies.google.com/privacy" target="_blank" rel="noreferrer">Política de Privacidad de Google</a>. Los datos se almacenan en servidores de Google Cloud con cifrado en tránsito (TLS) y en reposo.</p>
+
+  <!-- 5 -->
+  <h2>5. Suscripciones y facturación</h2>
+  <p>Atrile ofrece planes de suscripción mensual y anual. El procesamiento de pagos se realiza íntegramente a través de <strong>Google Play Billing</strong>. Atrile no almacena ni tiene acceso a los datos de tarjeta de crédito u otra información de pago. Consulta la <a href="https://payments.google.com/payments/apis-secure/get_legal_document?ldo=0&ldt=privacynotice&ldl=es" target="_blank" rel="noreferrer">política de pagos de Google</a> para más información.</p>
+
+  <!-- 6 -->
+  <h2>6. Menores de edad</h2>
+  <div class="highlight">
+    <strong>Atrile está dirigida a usuarios mayores de 13 años.</strong> No recopilamos intencionalmente información de niños menores de 13 años. Si eres padre, madre o tutor y crees que tu hijo menor de 13 años ha proporcionado datos personales, contáctanos para eliminarlos.
+  </div>
+  <p>Los usuarios entre 13 y 17 años deben contar con el conocimiento y consentimiento de su padre, madre o tutor legal para usar la App.</p>
+  <p>Los docentes que utilicen la función de mensajería con estudiantes menores de edad son responsables de obtener los permisos correspondientes de los padres o tutores, de acuerdo con la legislación aplicable en su país.</p>
+
+  <!-- 7 -->
+  <h2>7. Retención y eliminación de datos</h2>
+  <p>Conservamos tus datos mientras mantengas una cuenta activa. Puedes solicitar la eliminación de tus datos en cualquier momento escribiendo a <a href="mailto:supportatrile@gmail.com">supportatrile@gmail.com</a>. Eliminaremos tu información de nuestros servidores en un plazo máximo de 30 días.</p>
+  <p>Los datos almacenados únicamente en tu dispositivo (localStorage) se eliminan al desinstalar la App o limpiar los datos de la misma desde la configuración del sistema.</p>
+
+  <!-- 8 -->
+  <h2>8. Tus derechos</h2>
+  <p>Dependiendo de tu país de residencia, puedes tener derecho a:</p>
+  <ul>
+    <li>Acceder a los datos personales que conservamos sobre ti</li>
+    <li>Corregir datos inexactos</li>
+    <li>Solicitar la eliminación de tus datos</li>
+    <li>Oponerte al tratamiento de tus datos</li>
+    <li>Portabilidad de datos</li>
+  </ul>
+  <p>Para ejercer cualquiera de estos derechos, escríbenos a <a href="mailto:supportatrile@gmail.com">supportatrile@gmail.com</a>.</p>
+
+  <!-- 9 -->
+  <h2>9. Seguridad</h2>
+  <p>Implementamos medidas técnicas razonables para proteger tu información: cifrado TLS en tránsito, reglas de seguridad en Firestore que limitan el acceso a los datos propios de cada usuario, y autenticación segura a través de Google.</p>
+  <p>Sin embargo, ningún sistema de transmisión por Internet es completamente seguro. Te recomendamos no compartir tu código de estudiante con personas en quienes no confíes.</p>
+
+  <!-- 10 -->
+  <h2>10. Cambios a esta política</h2>
+  <p>Podemos actualizar esta Política de Privacidad en cualquier momento. Te notificaremos los cambios significativos mediante un aviso en la App o por correo electrónico. El uso continuado de Atrile después de la notificación implica la aceptación de los cambios.</p>
+
+  <!-- 11 -->
+  <h2>11. Contacto</h2>
+  <p>Para preguntas, solicitudes o quejas relacionadas con privacidad:</p>
+  <p><strong>Correo:</strong> <a href="mailto:supportatrile@gmail.com">supportatrile@gmail.com</a></p>
+</main>
+
+<footer>
+  <p>© 2026 Atrile · <a href="./terms.html">Términos de Servicio</a> · <a href="./">Volver a la App</a></p>
+</footer>
+
+</body>
+</html>
