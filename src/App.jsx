@@ -1,27 +1,33 @@
-import { useState, useEffect, useRef, useCallback, createContext, useContext } from "react";
-import ScoreViewer from "./ScoreViewer";
+import { useState, useEffect, useRef, useCallback, createContext, useContext, lazy, Suspense } from "react";
+import { store } from "./store";
+const ScoreViewer  = lazy(() => import("./ScoreViewer"));
+const TeacherPortal = lazy(() => import("./TeacherPortal"));
+import { db, auth, provider, firebaseConfigured } from "./firebase";
+import { collection, query, orderBy, onSnapshot, doc, getDoc, setDoc } from "firebase/firestore";
+import { onAuthStateChanged, signInWithPopup, signOut } from "firebase/auth";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // i18n — all UI strings in Spanish and English
 // ─────────────────────────────────────────────────────────────────────────────
 const T = {
   es: {
-    appName: "Práctica Musical",
-    appTagline: "Tu método de estudio",
-    nav: { home: "Inicio", tools: "Herramientas", goals: "Metas", history: "Diario", scores: "Partituras" },
-    greeting: "Buenos días,",
+    appName: "Atrile",
+    appTagline: "Tu práctica musical",
+    nav: { home: "Inicio", tools: "Herramientas", goals: "Metas", history: "Diario", scores: "Partituras", teacher: "Portal Maestro", classSession: "Sesión de Clase" },
+    greeting: "Hola,",
     musician: "músico.",
+    tagline: "Tu próximo nivel empieza aquí.",
     locale: "es-ES",
     stats: { week: "Sesiones esta semana", minutes: "Minutos totales", saved: "Sesiones guardadas" },
-    goalsSummary: { today: "🎯 Hoy:", month: "📅 Este mes:" },
-    newSession: "🎵 Nueva sesión de estudio",
-    firstSession: "🎵 Comenzar primera sesión",
+    goalsSummary: { today: "Hoy:", month: "Este mes:" },
+    newSession: "Nueva sesión de estudio",
+    firstSession: "Comenzar primera sesión",
     continueSession: "▶ Continuar sesión de hoy",
     linksModal: {
       title: "¿Qué hacemos con tus links?",
       subtitle: "Tienes links guardados de tu sesión anterior",
-      keep: "📎 Continuar con links anteriores",
-      blank: "🗒 Empezar en blanco",
+      keep: "Continuar con links anteriores",
+      blank: "Empezar en blanco",
     },
     session: {
       title: "Sesión de hoy",
@@ -32,12 +38,12 @@ const T = {
     },
     blocks: ["método", "escalas", "obras", "libre"],
     blockPh: (s) => `¿Qué vas a trabajar en ${s}?`,
-    timerLabel: "⏱ Tiempo:",
+    timerLabel: "Tiempo:",
     min: "min",
-    alarm: "🔔 Alarma al terminar",
+    alarm: "Alarma al terminar",
     searchPh: "Buscar partitura / grabación...",
     links: {
-      title: "🔗 Links de referencia",
+      title: "Links de referencia",
       ph: "Pega un link (YouTube, IMSLP, Spotify...)",
       empty: "Aún no has guardado links en esta sesión",
     },
@@ -57,24 +63,32 @@ const T = {
       keep: "Seguir practicando",
     },
     toolsTitle: "Herramientas",
+    notes: {
+      title: "Notas del Maestro",
+      code: "Tu código de alumno",
+      share: "Compártelo con tu maestro",
+      empty: "Aún no tienes notas de tu maestro",
+      new: "nota nueva",
+      news: "notas nuevas",
+    },
     metro: {
-      title: "🎵 Metrónomo",
+      title: "Metrónomo",
       accent: "Acento en 1",
       start: "▶ Iniciar",
       stop: "⏸ Detener",
       label: "Metro",
     },
     tuner: {
-      title: "🎙 Afinador Cromático",
-      activate: "🎙 Activar afinador",
-      deactivate: "⏹ Detener micrófono",
+      title: "Afinador Cromático",
+      activate: "Activar afinador",
+      deactivate: "Detener micrófono",
       inTune: "✓ Afinado",
     },
     goalsView: {
       title: "Metas y Progreso",
-      dayLabel: "🎯 Meta del día",
+      dayLabel: "Meta del día",
       dayPh: "¿Qué quieres lograr hoy?",
-      monthLabel: "📅 Meta del mes",
+      monthLabel: "Meta del mes",
       monthPh: "¿Qué quieres lograr este mes?",
       practiced: "Día practicado",
       today: "Hoy",
@@ -84,50 +98,51 @@ const T = {
       empty: "Aún no tienes sesiones guardadas.\n¡Empieza tu primera práctica!",
       back: "← Volver al historial",
       total: "Total:",
-      links: "🔗 Links guardados",
-      recs: "🎙 Grabaciones",
+      links: "Links guardados",
+      recs: "Grabaciones",
     },
     rec: {
-      title: "🎙 Grabación de sesión",
+      title: "Grabación de sesión",
       subtitle: "Video en MP4/H.264 listo para Instagram",
-      audioOnly: "🎙 Solo Audio",
-      audioVideo: "📹 Audio + Video",
-      fmtTitle: "📐 Formato Instagram",
+      audioOnly: "Solo Audio",
+      audioVideo: "Audio + Video",
+      fmtTitle: "Formato Instagram",
       fmtHint: "Se convierte a MP4 H.264 + AAC • 1080p • apto para Reels, Stories y Feed",
       recBtn: (f) => `● Grabar para Instagram (${f})`,
       recAudio: "● Grabar audio",
       stopBtn: "Detener grabación",
-      converting: "⏳ Convirtiendo a MP4...",
+      converting: "Convirtiendo a MP4...",
       savedLabel: "Grabaciones guardadas",
-      dl: (e) => `⬇ Descargar ${e}`,
-      readyFor: "📲 Listo para",
+      dl: (e) => `Descargar ${e}`,
+      readyFor: "Listo para",
       platforms: "Instagram · TikTok · WhatsApp",
-      fallback: "⚠️ WebM — convierte antes de subir",
+      fallback: "WebM — convierte antes de subir",
       loadingConv: "Cargando convertidor...",
       convFmt: (f) => `Convirtiendo a MP4 (${f})...`,
-      done: "✅ MP4 listo para Instagram",
+      done: "MP4 listo para Instagram",
       permErr: "No se pudo acceder al micrófono/cámara. Verifica los permisos.",
     },
     days: ["L", "M", "X", "J", "V", "S", "D"],
     practicedMin: (t) => `(${t} practicado)`,
   },
   en: {
-    appName: "Music Practice",
-    appTagline: "Your study method",
-    nav: { home: "Home", tools: "Tools", goals: "Goals", history: "Journal", scores: "Scores" },
-    greeting: "Good morning,",
+    appName: "Atrile",
+    appTagline: "Your music practice",
+    nav: { home: "Home", tools: "Tools", goals: "Goals", history: "Journal", scores: "Scores", teacher: "Teacher Portal", classSession: "Class Session" },
+    greeting: "Hello,",
     musician: "musician.",
+    tagline: "Your next level starts here.",
     locale: "en-US",
     stats: { week: "Sessions this week", minutes: "Total minutes", saved: "Saved sessions" },
-    goalsSummary: { today: "🎯 Today:", month: "📅 This month:" },
-    newSession: "🎵 New practice session",
-    firstSession: "🎵 Start your first session",
+    goalsSummary: { today: "Today:", month: "This month:" },
+    newSession: "New practice session",
+    firstSession: "Start your first session",
     continueSession: "▶ Continue today's session",
     linksModal: {
       title: "What about your links?",
       subtitle: "You have saved links from your last session",
-      keep: "📎 Keep previous links",
-      blank: "🗒 Start fresh",
+      keep: "Keep previous links",
+      blank: "Start fresh",
     },
     session: {
       title: "Today's Session",
@@ -136,14 +151,14 @@ const T = {
       pause: "⏹ Pause section",
       target: "goal",
     },
-    blocks: ["method", "scales", "repertoire", "free"],
+    blocks: ["method", "scales", "pieces", "open"],
     blockPh: (s) => `What will you work on in ${s}?`,
-    timerLabel: "⏱ Time:",
+    timerLabel: "Time:",
     min: "min",
-    alarm: "🔔 Alarm when done",
+    alarm: "Alarm when done",
     searchPh: "Search score / recording...",
     links: {
-      title: "🔗 Reference links",
+      title: "Reference links",
       ph: "Paste a link (YouTube, IMSLP, Spotify...)",
       empty: "No links saved in this session yet",
     },
@@ -163,24 +178,32 @@ const T = {
       keep: "Keep practicing",
     },
     toolsTitle: "Tools",
+    notes: {
+      title: "Teacher Notes",
+      code: "Your student code",
+      share: "Share it with your teacher",
+      empty: "No notes from your teacher yet",
+      new: "new note",
+      news: "new notes",
+    },
     metro: {
-      title: "🎵 Metronome",
+      title: "Metronome",
       accent: "Accent beat 1",
       start: "▶ Start",
       stop: "⏸ Stop",
       label: "Metro",
     },
     tuner: {
-      title: "🎙 Chromatic Tuner",
-      activate: "🎙 Activate tuner",
-      deactivate: "⏹ Stop microphone",
+      title: "Chromatic Tuner",
+      activate: "Activate tuner",
+      deactivate: "Stop microphone",
       inTune: "✓ In tune",
     },
     goalsView: {
       title: "Goals & Progress",
-      dayLabel: "🎯 Today's goal",
+      dayLabel: "Today's goal",
       dayPh: "What do you want to achieve today?",
-      monthLabel: "📅 Monthly goal",
+      monthLabel: "Monthly goal",
       monthPh: "What do you want to achieve this month?",
       practiced: "Practiced",
       today: "Today",
@@ -190,28 +213,28 @@ const T = {
       empty: "No sessions saved yet.\nStart your first practice!",
       back: "← Back to journal",
       total: "Total:",
-      links: "🔗 Saved links",
-      recs: "🎙 Recordings",
+      links: "Saved links",
+      recs: "Recordings",
     },
     rec: {
-      title: "🎙 Session recording",
+      title: "Session recording",
       subtitle: "Video as MP4/H.264 ready for Instagram",
-      audioOnly: "🎙 Audio only",
-      audioVideo: "📹 Audio + Video",
-      fmtTitle: "📐 Instagram format",
+      audioOnly: "Audio only",
+      audioVideo: "Audio + Video",
+      fmtTitle: "Instagram format",
       fmtHint: "Converted to MP4 H.264 + AAC • 1080p • for Reels, Stories & Feed",
       recBtn: (f) => `● Record for Instagram (${f})`,
       recAudio: "● Record audio",
       stopBtn: "Stop recording",
-      converting: "⏳ Converting to MP4...",
+      converting: "Converting to MP4...",
       savedLabel: "Saved recordings",
-      dl: (e) => `⬇ Download ${e}`,
-      readyFor: "📲 Ready for",
+      dl: (e) => `Download ${e}`,
+      readyFor: "Ready for",
       platforms: "Instagram · TikTok · WhatsApp",
-      fallback: "⚠️ WebM — convert before uploading",
+      fallback: "WebM — convert before uploading",
       loadingConv: "Loading converter...",
       convFmt: (f) => `Converting to MP4 (${f})...`,
-      done: "✅ MP4 ready for Instagram",
+      done: "MP4 ready for Instagram",
       permErr: "Could not access mic/camera. Check your permissions.",
     },
     days: ["M", "T", "W", "T", "F", "S", "S"],
@@ -219,8 +242,12 @@ const T = {
   },
 };
 
-const LangCtx = createContext({ lang: "es", t: T.es, setLang: () => {} });
+const LangCtx = createContext({ lang: "es", t: T.es, setLang: () => {}, darkMode: false });
 const useLang = () => useContext(LangCtx);
+
+// Icon helper — always resolves to the correct light/dark SVG
+const PUB = process.env.PUBLIC_URL || "";
+const icon = (name, dark) => `${PUB}/icons/${dark ? "dark" : "light"}/${name}.svg`;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Static data
@@ -243,9 +270,9 @@ const SCALE_DATA = {
 };
 
 const IG_FORMATS = [
-  { id: "reels",     label: "Reels / Stories", ratio: "9:16", icon: "📱", vf: "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2,setsar=1" },
-  { id: "feed_sq",   label: "Feed cuadrado",   ratio: "1:1",  icon: "⬛", vf: "scale=1080:1080:force_original_aspect_ratio=decrease,pad=1080:1080:(ow-iw)/2:(oh-ih)/2,setsar=1" },
-  { id: "feed_port", label: "Feed 4:5",        ratio: "4:5",  icon: "🖼", vf: "scale=1080:1350:force_original_aspect_ratio=decrease,pad=1080:1350:(ow-iw)/2:(oh-ih)/2,setsar=1" },
+  { id: "reels",     label: "Reels / Stories", ratio: "9:16", icon: "format-portrait",  vf: "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2,setsar=1" },
+  { id: "feed_sq",   label: "Feed cuadrado",   ratio: "1:1",  icon: "format-square",    vf: "scale=1080:1080:force_original_aspect_ratio=decrease,pad=1080:1080:(ow-iw)/2:(oh-ih)/2,setsar=1" },
+  { id: "feed_port", label: "Feed 4:5",        ratio: "4:5",  icon: "format-landscape", vf: "scale=1080:1350:force_original_aspect_ratio=decrease,pad=1080:1350:(ow-iw)/2:(oh-ih)/2,setsar=1" },
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -332,10 +359,13 @@ function Metronome({ compact = false }) {
 
   return (
     <div style={{ background: "#1a2e22", borderRadius: 20, padding: 28, color: "#e8e4d8" }}>
-      <h3 style={{ fontFamily: "'Playfair Display', serif", color: "#8fbc8f", marginBottom: 20, fontSize: 20 }}>{t.metro.title}</h3>
+      <h3 style={{ fontFamily: "'Playfair Display', serif", color: "#8fbc8f", marginBottom: 20, fontSize: 20, display: "flex", alignItems: "center", gap: 10 }}>
+        <img src={icon("metronome", true)} alt="" style={{ width: 22, height: 22, flexShrink: 0 }} />
+        {t.metro.title}
+      </h3>
       <div style={{ textAlign: "center", marginBottom: 24 }}>
-        <div style={{ fontSize: 56, fontWeight: 900, color: "#e8e4d8", fontFamily: "monospace", lineHeight: 1 }}>{bpm}</div>
-        <div style={{ color: "#8fbc8f", fontSize: 14, letterSpacing: 3, textTransform: "uppercase" }}>BPM</div>
+        <div style={{ fontSize: 56, fontWeight: 400, color: "#e8e4d8", fontFamily: "'Geist Mono', monospace", lineHeight: 1 }}>{bpm}</div>
+        <div style={{ color: "#8fbc8f", fontSize: 14, letterSpacing: 3, textTransform: "uppercase", fontFamily: "'Geist Mono', monospace" }}>BPM</div>
       </div>
       <input type="range" min={30} max={240} value={bpm} onChange={(e) => setBpm(+e.target.value)} style={{ width: "100%", accentColor: "#4a7c59", marginBottom: 16 }} />
       <div style={{ display: "flex", justifyContent: "center", gap: 8, marginBottom: 20, flexWrap: "wrap" }}>
@@ -427,7 +457,10 @@ function Tuner() {
 
   return (
     <div style={{ background: "#1a2e22", borderRadius: 20, padding: 28, color: "#e8e4d8" }}>
-      <h3 style={{ fontFamily: "'Playfair Display', serif", color: "#8fbc8f", marginBottom: 20, fontSize: 20 }}>{t.tuner.title}</h3>
+      <h3 style={{ fontFamily: "'Playfair Display', serif", color: "#8fbc8f", marginBottom: 20, fontSize: 20, display: "flex", alignItems: "center", gap: 10 }}>
+        <img src={icon("audio", true)} alt="" style={{ width: 22, height: 22, flexShrink: 0 }} />
+        {t.tuner.title}
+      </h3>
       <div style={{ textAlign: "center", marginBottom: 24 }}>
         <div style={{ fontSize: 64, fontWeight: 900, color: "#e8e4d8", fontFamily: "'Playfair Display', serif", lineHeight: 1 }}>
           {noteInfo.note}<span style={{ fontSize: 28, color: "#8fbc8f" }}>{noteInfo.octave}</span>
@@ -468,23 +501,23 @@ function ScaleInfo() {
   const info = SCALE_DATA[selected];
 
   return (
-    <div style={{ background: "#f0ede4", borderRadius: 16, padding: 20, border: "1px solid #c8d5c0" }}>
-      <h4 style={{ fontFamily: "'Playfair Display', serif", color: "#2d4a35", marginBottom: 12 }}>{t.scale.title}</h4>
+    <div style={{ background: "var(--c-card-warm)", borderRadius: 16, padding: 20, border: "1px solid var(--c-border-green)" }}>
+      <h4 style={{ fontFamily: "'Playfair Display', serif", color: "var(--c-heading2)", marginBottom: 12 }}>{t.scale.title}</h4>
       <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-        <select value={selected} onChange={(e) => setSelected(e.target.value)} style={{ flex: 1, padding: "8px 12px", borderRadius: 8, border: "1px solid #c8d5c0", background: "#fff", color: "#2d4a35", fontFamily: "inherit", fontSize: 14 }}>
+        <select value={selected} onChange={(e) => setSelected(e.target.value)} style={{ flex: 1, padding: "8px 12px", borderRadius: 8, border: "1px solid var(--c-border-green)", background: "var(--c-card)", color: "var(--c-heading2)", fontFamily: "inherit", fontSize: 14 }}>
           <option value="">{t.scale.select}</option>
           {Object.keys(SCALE_DATA).map((k) => <option key={k} value={k}>{k}</option>)}
         </select>
-        <select value={mode} onChange={(e) => setMode(e.target.value)} style={{ padding: "8px 12px", borderRadius: 8, border: "1px solid #c8d5c0", background: "#fff", color: "#2d4a35", fontFamily: "inherit", fontSize: 14 }}>
+        <select value={mode} onChange={(e) => setMode(e.target.value)} style={{ padding: "8px 12px", borderRadius: 8, border: "1px solid var(--c-border-green)", background: "var(--c-card)", color: "var(--c-heading2)", fontFamily: "inherit", fontSize: 14 }}>
           <option value="major">{t.scale.major}</option>
           <option value="minor">{t.scale.minor}</option>
         </select>
       </div>
       {info && (
-        <div style={{ background: "#e8f0e0", borderRadius: 10, padding: 14 }}>
-          <div style={{ marginBottom: 6 }}><strong style={{ color: "#2d4a35" }}>{t.scale.alts}</strong> <span style={{ color: "#4a7c59" }}>{info.alterations}</span></div>
-          <div style={{ marginBottom: 6 }}><strong style={{ color: "#2d4a35" }}>{t.scale.notes}</strong> <span style={{ color: "#4a7c59", fontFamily: "monospace" }}>{info.notes}</span></div>
-          <div><strong style={{ color: "#2d4a35" }}>{t.scale.relative} {mode === "major" ? t.scale.minor : t.scale.major}:</strong> <span style={{ color: "#e07b39", fontWeight: 700 }}>{info.relative}</span></div>
+        <div style={{ background: "var(--c-card-green)", borderRadius: 10, padding: 14 }}>
+          <div style={{ marginBottom: 6 }}><strong style={{ color: "var(--c-heading2)" }}>{t.scale.alts}</strong> <span style={{ color: "#4a7c59" }}>{info.alterations}</span></div>
+          <div style={{ marginBottom: 6 }}><strong style={{ color: "var(--c-heading2)" }}>{t.scale.notes}</strong> <span style={{ color: "#4a7c59", fontFamily: "'Geist Mono', monospace" }}>{info.notes}</span></div>
+          <div><strong style={{ color: "var(--c-heading2)" }}>{t.scale.relative} {mode === "major" ? t.scale.minor : t.scale.major}:</strong> <span style={{ color: "#e07b39", fontWeight: 700 }}>{info.relative}</span></div>
         </div>
       )}
     </div>
@@ -495,7 +528,7 @@ function ScaleInfo() {
 // Recording Panel — Instagram-ready MP4
 // ─────────────────────────────────────────────────────────────────────────────
 function RecordingPanel({ session, onUpdate }) {
-  const { t } = useLang();
+  const { t, darkMode } = useLang();
   const [mode, setMode]                       = useState("audio");
   const [igFormat, setIgFormat]               = useState("reels");
   const [recording, setRecording]             = useState(false);
@@ -512,8 +545,8 @@ function RecordingPanel({ session, onUpdate }) {
   const loadFFmpeg = async () => {
     if (ffReadyRef.current) return ffmpegRef.current;
     setConvertMsg(t.rec.loadingConv);
-    const { FFmpeg }               = await import("https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.10/dist/esm/index.js");
-    const { fetchFile, toBlobURL } = await import("https://cdn.jsdelivr.net/npm/@ffmpeg/util@0.12.1/dist/esm/index.js");
+    const { FFmpeg }               = await import(/* webpackIgnore: true */ "https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.10/dist/esm/index.js");
+    const { fetchFile, toBlobURL } = await import(/* webpackIgnore: true */ "https://cdn.jsdelivr.net/npm/@ffmpeg/util@0.12.1/dist/esm/index.js");
     const ff = new FFmpeg();
     ff.on("progress", ({ progress }) => setConvertProgress(Math.round(progress * 100)));
     const base = "https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/esm";
@@ -594,25 +627,26 @@ function RecordingPanel({ session, onUpdate }) {
   const selectedFmt = IG_FORMATS.find((f) => f.id === igFormat);
 
   return (
-    <div style={{ background: "#fff", borderRadius: 16, padding: 20, border: "1px solid #ddd8cc" }}>
-      <h4 style={{ fontFamily: "'Playfair Display', serif", color: "#2d4a35", marginBottom: 6 }}>{t.rec.title}</h4>
+    <div style={{ background: "var(--c-card)", borderRadius: 16, padding: 20, border: "1px solid var(--c-border)" }}>
+      <h4 style={{ fontFamily: "'Playfair Display', serif", color: "var(--c-heading2)", marginBottom: 6 }}>{t.rec.title}</h4>
       <div style={{ color: "#8fbc8f", fontSize: 12, marginBottom: 16 }}>{t.rec.subtitle}</div>
 
       <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
         {[{ id: "audio", label: t.rec.audioOnly }, { id: "video", label: t.rec.audioVideo }].map((m) => (
-          <button key={m.id} onClick={() => setMode(m.id)} style={{ flex: 1, padding: "10px", background: mode === m.id ? "#1a2e22" : "#f5f2eb", color: mode === m.id ? "#e8e4d8" : "#6b8f6b", border: "1px solid #ddd8cc", borderRadius: 10, cursor: "pointer", fontWeight: 700, fontSize: 14 }}>
+          <button key={m.id} onClick={() => setMode(m.id)} style={{ flex: 1, padding: "10px", background: mode === m.id ? "#1a2e22" : "var(--c-card-alt)", color: mode === m.id ? "#e8e4d8" : "var(--c-muted)", border: "1px solid var(--c-border)", borderRadius: 10, cursor: "pointer", fontWeight: 700, fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+            <img src={icon(m.id, true)} alt="" style={{ width: 18, height: 18 }} />
             {m.label}
           </button>
         ))}
       </div>
 
       {mode === "video" && (
-        <div style={{ background: "#f0ede4", borderRadius: 12, padding: 14, marginBottom: 14 }}>
-          <div style={{ color: "#2d4a35", fontSize: 13, fontWeight: 700, marginBottom: 10 }}>{t.rec.fmtTitle}</div>
+        <div style={{ background: "var(--c-card-warm)", borderRadius: 12, padding: 14, marginBottom: 14 }}>
+          <div style={{ color: "var(--c-heading2)", fontSize: 13, fontWeight: 700, marginBottom: 10 }}>{t.rec.fmtTitle}</div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
             {IG_FORMATS.map((f) => (
-              <button key={f.id} onClick={() => setIgFormat(f.id)} style={{ padding: "10px 6px", textAlign: "center", background: igFormat === f.id ? "#1a2e22" : "#fff", color: igFormat === f.id ? "#e8e4d8" : "#6b8f6b", border: igFormat === f.id ? "2px solid #4a7c59" : "1px solid #ddd8cc", borderRadius: 10, cursor: "pointer", fontFamily: "inherit" }}>
-                <div style={{ fontSize: 18 }}>{f.icon}</div>
+              <button key={f.id} onClick={() => setIgFormat(f.id)} style={{ padding: "10px 6px", textAlign: "center", background: igFormat === f.id ? "#1a2e22" : "var(--c-card)", color: igFormat === f.id ? "#e8e4d8" : "var(--c-muted)", border: igFormat === f.id ? "2px solid #4a7c59" : "1px solid var(--c-border)", borderRadius: 10, cursor: "pointer", fontFamily: "inherit" }}>
+                <div style={{ display: "flex", justifyContent: "center" }}><img src={icon(f.icon, true)} alt="" style={{ width: 22, height: 22 }} /></div>
                 <div style={{ fontSize: 11, fontWeight: 700, marginTop: 2 }}>{f.ratio}</div>
                 <div style={{ fontSize: 10, lineHeight: 1.2, marginTop: 2 }}>{f.label}</div>
               </button>
@@ -643,7 +677,7 @@ function RecordingPanel({ session, onUpdate }) {
         </div>
       )}
       {convertMsg && !converting && (
-        <div style={{ background: "#e8f0e0", borderRadius: 10, padding: "10px 14px", marginBottom: 14, color: "#2d4a35", fontSize: 13, textAlign: "center" }}>{convertMsg}</div>
+        <div style={{ background: "var(--c-card-green)", borderRadius: 10, padding: "10px 14px", marginBottom: 14, color: "var(--c-heading2)", fontSize: 13, textAlign: "center" }}>{convertMsg}</div>
       )}
 
       <button onClick={recording ? stopRec : startRec} disabled={converting} style={{ width: "100%", padding: 14, background: recording ? "#c0504d" : converting ? "#aaa" : "#4a7c59", color: "#fff", border: "none", borderRadius: 12, cursor: converting ? "not-allowed" : "pointer", fontFamily: "'Playfair Display', serif", fontSize: 16, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}>
@@ -658,12 +692,12 @@ function RecordingPanel({ session, onUpdate }) {
         <div style={{ marginTop: 20 }}>
           <div style={{ color: "#6b8f6b", fontSize: 13, marginBottom: 10, fontWeight: 700 }}>{t.rec.savedLabel} ({recordings.length})</div>
           {recordings.map((r) => (
-            <div key={r.id} style={{ background: "#f5f2eb", borderRadius: 12, padding: "12px 14px", marginBottom: 10, border: "1px solid #e0ddd4" }}>
+            <div key={r.id} style={{ background: "var(--c-card-alt)", borderRadius: 12, padding: "12px 14px", marginBottom: 10, border: "1px solid var(--c-border)" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span style={{ fontSize: 16 }}>{r.type === "video" ? "📹" : "🎙"}</span>
+                  <img src={icon(r.type === "video" ? "video" : "audio", darkMode)} alt="" style={{ width: 18, height: 18, flexShrink: 0 }} />
                   <div>
-                    <div style={{ color: "#2d4a35", fontSize: 13, fontWeight: 700 }}>{r.date}</div>
+                    <div style={{ color: "var(--c-heading2)", fontSize: 13, fontWeight: 700 }}>{r.date}</div>
                     {r.format && <div style={{ color: "#4a7c59", fontSize: 11 }}>{r.format.icon} {r.format.label} • MP4 H.264</div>}
                     {r.fallback && <div style={{ color: "#e07b39", fontSize: 11 }}>{t.rec.fallback}</div>}
                   </div>
@@ -678,9 +712,9 @@ function RecordingPanel({ session, onUpdate }) {
                   {t.rec.dl(r.type === "video" ? ".mp4" : ".m4a")}
                 </a>
                 {r.type === "video" && !r.fallback && (
-                  <div style={{ flex: 1, background: "#e8f0e0", borderRadius: 8, padding: 8, textAlign: "center" }}>
+                  <div style={{ flex: 1, background: "var(--c-card-green)", borderRadius: 8, padding: 8, textAlign: "center" }}>
                     <div style={{ fontSize: 11, color: "#4a7c59", fontWeight: 700 }}>{t.rec.readyFor}</div>
-                    <div style={{ fontSize: 10, color: "#6b8f6b" }}>{t.rec.platforms}</div>
+                    <div style={{ fontSize: 10, color: "var(--c-muted)" }}>{t.rec.platforms}</div>
                   </div>
                 )}
               </div>
@@ -694,30 +728,161 @@ function RecordingPanel({ session, onUpdate }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Session View
+// Block Panel — notes, timer, links for one practice block
 // ─────────────────────────────────────────────────────────────────────────────
-function SessionView({ session, onUpdate, onFinish }) {
-  const { t } = useLang();
+function BlockPanel({ block, blockIdx, t, lang, running, elapsed, onStartStop, onChange, session, onUpdate, onOpenScore }) {
+  const { darkMode } = useLang();
+  const [newLink, setNewLink] = useState("");
+  const label      = t.blocks[blockIdx] || block.section;
+  const targetSecs = block.time * 60;
+
+  const addLink = () => {
+    if (!newLink.trim()) return;
+    onUpdate({ ...session, links: [...(session.links || []), { url: newLink.trim(), id: Date.now() }] });
+    setNewLink("");
+  };
+  const removeLink = (id) =>
+    onUpdate({ ...session, links: (session.links || []).filter(l => l.id !== id) });
+
+  return (
+    <div style={{ height: "100%", overflowY: "auto", background: "var(--c-bg)" }}>
+      <div style={{ padding: "16px 16px 32px", maxWidth: 680, margin: "0 auto" }}>
+
+        {/* Header + start/stop */}
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontFamily: "'Playfair Display', serif", color: "var(--c-heading2)", fontSize: 20, fontWeight: 700, textTransform: "capitalize" }}>{label}</div>
+            {block.elapsed > 0 && <div style={{ color: "#8fbc8f", fontSize: 12 }}>+ {fmt(block.elapsed)} {lang === "es" ? "acumulado" : "accumulated"}</div>}
+          </div>
+          <button onClick={onStartStop}
+            style={{ background: running ? "#c0504d" : "#4a7c59", color: "#fff", border: "none", borderRadius: 10, padding: "9px 18px", cursor: "pointer", fontWeight: 700, fontSize: 14, fontFamily: "inherit", minWidth: 90 }}>
+            {running ? `⏸ ${fmt(elapsed)}` : `▶ ${lang === "es" ? "Iniciar" : "Start"}`}
+          </button>
+        </div>
+
+        {/* Timer config */}
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: running ? 10 : 14, background: "var(--c-card-green)", borderRadius: 10, padding: "10px 14px" }}>
+          <span style={{ color: "var(--c-heading2)", fontSize: 13, flex: 1 }}>{t.timerLabel}</span>
+          <button onClick={() => onChange("time", Math.max(5, block.time - 5))}
+            style={{ background: "rgba(74,124,89,0.15)", border: "none", borderRadius: 6, color: "var(--c-heading2)", cursor: "pointer", width: 30, height: 30, fontSize: 18, fontWeight: 700 }}>−</button>
+          <span style={{ color: "var(--c-heading2)", fontWeight: 700, fontSize: 16, minWidth: 60, textAlign: "center" }}>{block.time} {t.min}</span>
+          <button onClick={() => onChange("time", Math.min(120, block.time + 5))}
+            style={{ background: "rgba(74,124,89,0.15)", border: "none", borderRadius: 6, color: "var(--c-heading2)", cursor: "pointer", width: 30, height: 30, fontSize: 18, fontWeight: 700 }}>+</button>
+          <label style={{ display: "flex", alignItems: "center", gap: 5, color: "#6b8f6b", fontSize: 13, cursor: "pointer", marginLeft: 6 }}>
+            <input type="checkbox" checked={block.alarmEnabled} onChange={e => onChange("alarmEnabled", e.target.checked)} style={{ accentColor: "#4a7c59" }} />
+            🔔
+          </label>
+        </div>
+
+        {/* Progress bar when running */}
+        {running && targetSecs > 0 && (
+          <div style={{ background: "var(--c-border)", borderRadius: 4, height: 5, marginBottom: 14, overflow: "hidden" }}>
+            <div style={{ background: "#4a7c59", height: 5, borderRadius: 4, width: `${Math.min(100, (elapsed / targetSecs) * 100)}%`, transition: "width 1s linear" }} />
+          </div>
+        )}
+
+        {/* Notes */}
+        <textarea
+          placeholder={t.blockPh(label)}
+          value={block.notes}
+          onChange={e => onChange("notes", e.target.value)}
+          style={{ width: "100%", border: "1px solid var(--c-border)", borderRadius: 10, padding: "12px 14px", minHeight: 100, background: "var(--c-card)", color: "var(--c-text)", fontSize: 14, resize: "vertical", outline: "none", lineHeight: 1.6, marginBottom: 14, boxSizing: "border-box" }}
+        />
+
+        {/* Open score button */}
+        <button onClick={onOpenScore}
+          style={{ width: "100%", padding: 11, background: "transparent", border: "1px solid #4a7c59", borderRadius: 10, color: "#4a7c59", cursor: "pointer", fontWeight: 700, fontSize: 14, fontFamily: "inherit", marginBottom: 14, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+          <img src={icon("scores", darkMode)} alt="" style={{ width: 18, height: 18 }} />
+          {lang === "es" ? "Abrir partitura" : "Open score"}
+        </button>
+
+        {/* Spotify/Apple — only for pieces block (index 2) */}
+        {blockIdx === 2 && (
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>
+            <input id="block-search" placeholder={t.searchPh}
+              style={{ flex: 1, padding: "7px 10px", border: "1px solid var(--c-border)", borderRadius: 8, background: "var(--c-card-warm)", fontSize: 13, color: "var(--c-heading2)", minWidth: 120, outline: "none" }}
+              onKeyDown={e => { if (e.key === "Enter") window.open(`https://open.spotify.com/search/${encodeURIComponent(e.target.value)}`, "_blank"); }} />
+            <button onClick={() => window.open(`https://open.spotify.com/search/${encodeURIComponent(document.getElementById("block-search")?.value || "")}`, "_blank")}
+              style={{ background: "#1DB954", color: "#fff", border: "none", borderRadius: 8, padding: "7px 12px", cursor: "pointer", fontSize: 12, fontWeight: 700 }}>Spotify</button>
+            <button onClick={() => window.open(`https://music.apple.com/search?term=${encodeURIComponent(document.getElementById("block-search")?.value || "")}`, "_blank")}
+              style={{ background: "#fc3c44", color: "#fff", border: "none", borderRadius: 8, padding: "7px 10px", cursor: "pointer", fontSize: 12, fontWeight: 700 }}>Apple</button>
+          </div>
+        )}
+
+        {/* Links */}
+        <div style={{ background: "var(--c-card)", borderRadius: 12, padding: 14, border: "1px solid var(--c-border)" }}>
+          <div style={{ color: "var(--c-heading2)", fontSize: 13, fontWeight: 700, marginBottom: 10 }}>{t.links.title}</div>
+          <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+            <input value={newLink} onChange={e => setNewLink(e.target.value)} onKeyDown={e => e.key === "Enter" && addLink()}
+              placeholder={t.links.ph}
+              style={{ flex: 1, padding: "7px 10px", border: "1px solid var(--c-border)", borderRadius: 8, background: "var(--c-card-warm)", color: "var(--c-heading2)", fontSize: 13, outline: "none" }} />
+            <button onClick={addLink} style={{ background: "#4a7c59", color: "#fff", border: "none", borderRadius: 8, padding: "7px 14px", cursor: "pointer", fontWeight: 700 }}>+</button>
+          </div>
+          {!(session.links?.length) && <div style={{ color: "var(--c-muted)", fontSize: 12 }}>{t.links.empty}</div>}
+          {(session.links || []).map(link => (
+            <div key={link.id} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5, background: "var(--c-card-alt)", borderRadius: 7, padding: "7px 10px" }}>
+              <a href={link.url} target="_blank" rel="noreferrer" style={{ color: "#4a7c59", flex: 1, fontSize: 12, wordBreak: "break-all" }}>{link.url}</a>
+              <button onClick={() => removeLink(link.id)} style={{ background: "none", border: "none", color: "#c0504d", cursor: "pointer", fontSize: 16, lineHeight: 1 }}>×</button>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Session View — full-screen with auto-hiding top/bottom bars
+// ─────────────────────────────────────────────────────────────────────────────
+function SessionView({ session, onUpdate, onFinish, lang, onNavChange, onOpenDrawer }) {
+  const { t, darkMode } = useLang();
+
+  // Timing
   const [activeBlock, setActiveBlock] = useState(null);
   const [running, setRunning]         = useState(false);
   const [elapsed, setElapsed]         = useState(0);
-  const [newLink, setNewLink]         = useState("");
-  const [showFinish, setShowFinish]   = useState(false);
   const intervalRef = useRef(null);
 
-  const target     = activeBlock !== null ? session.blocks[activeBlock] : null;
-  const targetSecs = target ? target.time * 60 : 0;
+  // UI
+  const [panelIdx, setPanelIdx]       = useState(null);
+  const [showScore, setShowScore]     = useState(false);
+  const [scoreLoaded, setScoreLoaded] = useState(false);
+  const [showTools, setShowTools]     = useState(false);
+  const [showFinish, setShowFinish]   = useState(false);
+  const [showBars, setShowBars]       = useState(true);
+  const [recActive, setRecActive]     = useState(false);
 
+  const hideTimer = useRef(null);
+  const mrRef     = useRef(null);
+  const chunksRef = useRef([]);
+
+  // Hide app header while session is active
+  useEffect(() => { onNavChange(true); return () => onNavChange(false); }, [onNavChange]);
+
+  // Auto-hide bars only while score is visible (reading mode)
+  const triggerBars = useCallback(() => {
+    setShowBars(true);
+    clearTimeout(hideTimer.current);
+    if (showScore) hideTimer.current = setTimeout(() => setShowBars(false), 4000);
+  }, [showScore]);
+
+  useEffect(() => {
+    if (!showScore) { setShowBars(true); clearTimeout(hideTimer.current); }
+    else triggerBars();
+    return () => clearTimeout(hideTimer.current);
+  }, [showScore, triggerBars]);
+
+  // Timer
   useEffect(() => {
     if (running) {
       intervalRef.current = setInterval(() => {
-        setElapsed((e) => {
+        setElapsed(e => {
           const next = e + 1;
-          if (target?.alarmEnabled && next >= targetSecs) {
+          const b = session.blocks[activeBlock];
+          if (b?.alarmEnabled && next >= b.time * 60) {
             try {
-              const ctx = new AudioContext();
-              const osc = ctx.createOscillator();
-              const g   = ctx.createGain();
+              const ctx = new (window.AudioContext || window.webkitAudioContext)();
+              const osc = ctx.createOscillator(); const g = ctx.createGain();
               osc.connect(g); g.connect(ctx.destination);
               osc.frequency.value = 880;
               g.gain.setValueAtTime(0.3, ctx.currentTime);
@@ -729,151 +894,220 @@ function SessionView({ session, onUpdate, onFinish }) {
           return next;
         });
       }, 1000);
-    } else {
-      clearInterval(intervalRef.current);
-    }
+    } else { clearInterval(intervalRef.current); }
     return () => clearInterval(intervalRef.current);
-  }, [running, target, targetSecs]);
+  }, [running, activeBlock, session.blocks]);
 
-  const stopBlock = () => {
-    setRunning(false);
-    if (activeBlock !== null) {
-      const updated = { ...session };
-      updated.blocks[activeBlock].elapsed = (updated.blocks[activeBlock].elapsed || 0) + elapsed;
-      onUpdate(updated);
-    }
-    setElapsed(0);
-    setActiveBlock(null);
+  const saveElapsed = useCallback((idx, secs) => {
+    if (idx === null || secs === 0) return;
+    const u = { ...session };
+    u.blocks[idx] = { ...u.blocks[idx], elapsed: (u.blocks[idx].elapsed || 0) + secs };
+    onUpdate(u);
+  }, [session, onUpdate]);
+
+  const stopBlock = useCallback(() => {
+    setRunning(false); saveElapsed(activeBlock, elapsed); setElapsed(0);
+  }, [activeBlock, elapsed, saveElapsed]);
+
+  const startBlock = useCallback((i) => {
+    if (running) { saveElapsed(activeBlock, elapsed); setElapsed(0); }
+    setActiveBlock(i); setRunning(false);
+    setTimeout(() => setRunning(true), 30);
+  }, [running, activeBlock, elapsed, saveElapsed]);
+
+  const updateBlock = useCallback((i, field, val) => {
+    const u = { ...session }; u.blocks[i] = { ...u.blocks[i], [field]: val }; onUpdate(u);
+  }, [session, onUpdate]);
+
+  const openScore = useCallback(() => {
+    setShowScore(true); setScoreLoaded(true); triggerBars();
+  }, [triggerBars]);
+
+  const toggleBlock = useCallback((i) => {
+    triggerBars();
+    if (panelIdx === i && !showScore) { setPanelIdx(null); return; }
+    setPanelIdx(i); setShowScore(false);
+    if (activeBlock !== i) startBlock(i);
+  }, [panelIdx, showScore, activeBlock, startBlock, triggerBars]);
+
+  // Simple audio recording (full RecordingPanel stays in history/tools)
+  const startRec = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false } });
+      chunksRef.current = [];
+      const mime = MediaRecorder.isTypeSupported("audio/mp4;codecs=aac") ? "audio/mp4;codecs=aac" : "audio/webm;codecs=opus";
+      const mr = new MediaRecorder(stream, { mimeType: mime });
+      mr.ondataavailable = e => { if (e.data.size > 0) chunksRef.current.push(e.data); };
+      mr.onstop = () => {
+        stream.getTracks().forEach(tr => tr.stop());
+        const blob = new Blob(chunksRef.current, { type: mime });
+        const ext  = mime.includes("mp4") ? "m4a" : "webm";
+        const url  = URL.createObjectURL(blob);
+        const a    = document.createElement("a"); a.href = url; a.download = `grabacion-${Date.now()}.${ext}`; a.click();
+        onUpdate({ ...session, recordings: [...(session.recordings || []), { id: Date.now(), date: new Date().toLocaleTimeString(), type: "audio", url, filename: `audio-${Date.now()}.${ext}`, format: null }] });
+      };
+      mr.start(500); mrRef.current = mr; setRecActive(true);
+    } catch { alert(lang === "es" ? "No se pudo acceder al micrófono" : "Could not access microphone"); }
   };
+  const stopRec = () => { mrRef.current?.stop(); mrRef.current = null; setRecActive(false); };
 
-  const startBlock = (i) => {
-    if (running) stopBlock();
-    setActiveBlock(i); setElapsed(0); setRunning(true);
-  };
+  useEffect(() => () => { clearInterval(intervalRef.current); clearTimeout(hideTimer.current); mrRef.current?.stop(); }, []);
 
-  const updateBlock = (i, field, val) => {
-    const updated = { ...session };
-    updated.blocks[i][field] = val;
-    onUpdate(updated);
-  };
+  const totalElapsed   = session.blocks.reduce((a, b) => a + (b.elapsed || 0), 0);
+  const activeBlockObj = activeBlock !== null ? session.blocks[activeBlock] : null;
+  const targetSecs     = activeBlockObj ? activeBlockObj.time * 60 : 0;
+  const pct            = running && targetSecs > 0 ? Math.min(100, (elapsed / targetSecs) * 100) : 0;
+  const BLOCK_SVG      = ["study", "metronome", "scores", "tools"];
 
-  const addLink = () => {
-    if (!newLink.trim()) return;
-    const updated = { ...session, links: [...session.links, { url: newLink, id: Date.now() }] };
-    onUpdate(updated); setNewLink("");
-  };
-
-  const pct = activeBlock !== null ? Math.min(100, (elapsed / targetSecs) * 100) : 0;
+  const barBase = (from) => ({
+    position: "absolute", [from === "top" ? "top" : "bottom"]: 0, left: 0, right: 0, zIndex: 30,
+    background: "rgba(14,26,18,0.97)", backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)",
+    borderBottom: from === "top" ? "1px solid rgba(74,124,89,0.18)" : "none",
+    borderTop:    from === "bottom" ? "1px solid rgba(74,124,89,0.18)" : "none",
+    transform: showBars ? "translateY(0)" : `translateY(${from === "top" ? "-100%" : "100%"})`,
+    transition: "transform 0.28s cubic-bezier(0.4,0,0.2,1)",
+  });
 
   return (
-    <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20 }}>
-        <div>
-          <h2 style={{ fontFamily: "'Playfair Display', serif", color: "#1a2e22", fontSize: 24, fontWeight: 900 }}>{t.session.title}</h2>
-          <div style={{ color: "#6b8f6b", fontSize: 13 }}>{session.date}</div>
-        </div>
-        <button onClick={() => setShowFinish(true)} style={{ background: "#e07b39", color: "#fff", border: "none", borderRadius: 10, padding: "10px 18px", cursor: "pointer", fontWeight: 700, fontSize: 14 }}>
-          {t.session.finish}
-        </button>
-      </div>
+    <div style={{ position: "relative", flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--c-bg)" }}
+      onPointerDown={triggerBars}>
 
-      <div style={{ background: "#1a2e22", borderRadius: 14, padding: "12px 16px", marginBottom: 20 }}>
-        <Metronome compact />
-      </div>
-
-      {activeBlock !== null && (
-        <div style={{ background: "#1a2e22", borderRadius: 20, padding: 24, marginBottom: 20, textAlign: "center" }}>
-          <div style={{ color: "#8fbc8f", fontSize: 13, textTransform: "uppercase", letterSpacing: 2, marginBottom: 4 }}>
-            {t.session.studying} {session.blocks[activeBlock].section.toUpperCase()}
-          </div>
-          <div style={{ fontSize: 52, fontWeight: 900, color: "#e8e4d8", fontFamily: "monospace", lineHeight: 1 }}>{fmt(elapsed)}</div>
-          <div style={{ color: "#6b8f6b", fontSize: 13, marginBottom: 12 }}>/ {fmt(targetSecs)} {t.session.target}</div>
-          <div style={{ background: "#2d4a35", borderRadius: 6, height: 6, marginBottom: 16 }}>
-            <div style={{ background: "#4a7c59", height: 6, borderRadius: 6, width: `${pct}%`, transition: "width 1s linear" }} />
-          </div>
-          <button onClick={stopBlock} style={{ background: "#c0504d", color: "#fff", border: "none", borderRadius: 10, padding: "10px 24px", cursor: "pointer", fontWeight: 700 }}>
-            {t.session.pause}
+      {/* ── TOP BAR ── */}
+      <div style={barBase("top")}>
+        <div style={{ display: "flex", alignItems: "center", padding: "10px 12px", gap: 8 }}>
+          <button onClick={onOpenDrawer} style={{ background: "none", border: "none", cursor: "pointer", padding: "4px 6px", display: "flex", flexDirection: "column", gap: 4, flexShrink: 0 }}>
+            <span style={{ display: "block", width: 20, height: 2, background: "#e8e4d8", borderRadius: 2 }} />
+            <span style={{ display: "block", width: 14, height: 2, background: "#8fbc8f", borderRadius: 2 }} />
+            <span style={{ display: "block", width: 20, height: 2, background: "#e8e4d8", borderRadius: 2 }} />
           </button>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ color: "#e8e4d8", fontSize: 12, fontWeight: 700, fontFamily: "'Playfair Display', serif" }}>{t.session.title}</div>
+            <div style={{ color: "#4a7c59", fontSize: 11, fontFamily: "'Geist Mono', monospace" }}>
+              {fmt(totalElapsed + (running ? elapsed : 0))}
+              {running && activeBlock !== null && <span style={{ color: "#8fbc8f", marginLeft: 6 }}>· {t.blocks[activeBlock]}</span>}
+            </div>
+          </div>
+          <button onClick={showScore ? () => setShowScore(false) : openScore} title={lang === "es" ? "Partitura" : "Score"}
+            style={{ background: showScore ? "rgba(74,124,89,0.55)" : "rgba(255,255,255,0.08)", border: `1px solid ${showScore ? "#4a7c59" : "rgba(255,255,255,0.12)"}`, borderRadius: 8, cursor: "pointer", padding: "6px 9px", display: "flex", alignItems: "center" }}>
+            <img src={icon("scores", true)} alt="" style={{ width: 18, height: 18 }} />
+          </button>
+          <button onClick={() => setShowTools(s => !s)} title={lang === "es" ? "Metrónomo" : "Metronome"}
+            style={{ background: showTools ? "rgba(74,124,89,0.55)" : "rgba(255,255,255,0.08)", border: `1px solid ${showTools ? "#4a7c59" : "rgba(255,255,255,0.12)"}`, borderRadius: 8, cursor: "pointer", padding: "6px 9px", display: "flex", alignItems: "center" }}>
+            <img src={icon("metronome", true)} alt="" style={{ width: 18, height: 18 }} />
+          </button>
+          <button onClick={recActive ? stopRec : startRec} title={lang === "es" ? "Grabar" : "Record"}
+            style={{ background: recActive ? "rgba(192,80,77,0.7)" : "rgba(255,255,255,0.08)", border: `1px solid ${recActive ? "#c0504d" : "rgba(255,255,255,0.12)"}`, borderRadius: 8, color: "#e8e4d8", cursor: "pointer", padding: "5px 9px", fontSize: 14 }}>
+            {recActive ? "⏹" : "⏺"}
+          </button>
+          <button onClick={() => setShowFinish(true)}
+            style={{ background: "#4a7c59", border: "none", borderRadius: 8, color: "#fff", cursor: "pointer", padding: "6px 12px", fontSize: 12, fontWeight: 700, fontFamily: "inherit", flexShrink: 0 }}>
+            {t.session.finish}
+          </button>
+        </div>
+        {recActive && (
+          <div style={{ background: "rgba(192,80,77,0.15)", borderTop: "1px solid rgba(192,80,77,0.25)", padding: "5px 16px", display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#ef4444", display: "inline-block", animation: "pulse 1s infinite" }} />
+            <span style={{ color: "#fca5a5", fontSize: 12, fontWeight: 700 }}>{lang === "es" ? "Grabando audio…" : "Recording audio…"}</span>
+          </div>
+        )}
+      </div>
+
+      {/* ── TOOLS POPUP (metronome) ── */}
+      {showTools && (
+        <div style={{ position: "absolute", top: 58, right: 8, zIndex: 40, background: "rgba(10,20,14,0.97)", backdropFilter: "blur(16px)", WebkitBackdropFilter: "blur(16px)", border: "1px solid rgba(74,124,89,0.35)", borderRadius: 16, padding: 16, width: "min(260px, calc(100vw - 24px))", boxShadow: "0 8px 32px rgba(0,0,0,0.55)" }}>
+          <Metronome compact />
         </div>
       )}
 
-      <div style={{ display: "grid", gap: 14, marginBottom: 24 }}>
-        {session.blocks.map((block, i) => (
-          <div key={i} style={{ background: activeBlock === i ? "#e8f0e0" : "#fff", border: activeBlock === i ? "2px solid #4a7c59" : "1px solid #ddd8cc", borderRadius: 16, padding: 18, transition: "all 0.2s" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-              <div style={{ fontFamily: "'Playfair Display', serif", fontWeight: 700, color: "#2d4a35", fontSize: 16, textTransform: "capitalize" }}>
-                📗 {block.section}
-                {block.elapsed > 0 && <span style={{ color: "#8fbc8f", fontSize: 12, fontWeight: 400, marginLeft: 8 }}>({fmt(block.elapsed || 0)})</span>}
-              </div>
-              <button onClick={() => startBlock(i)} style={{ background: activeBlock === i ? "#e07b39" : "#4a7c59", color: "#fff", border: "none", borderRadius: 8, padding: "6px 14px", cursor: "pointer", fontSize: 13, fontWeight: 700 }}>
-                {activeBlock === i ? "⏸" : "▶"}
+      {/* ── SCORE VIEWER — stays mounted once opened to preserve state ── */}
+      {scoreLoaded && (
+        <div style={{ position: "absolute", inset: 0, zIndex: 10, display: showScore ? "flex" : "none", flexDirection: "column", paddingTop: 56, paddingBottom: 76 }}>
+          <Suspense fallback={<div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "#6b8f6b", background: "#1a2e22" }}>{lang === "es" ? "Cargando…" : "Loading…"}</div>}>
+            <ScoreViewer lang={lang} onNavChange={() => {}} />
+          </Suspense>
+        </div>
+      )}
+
+      {/* ── MAIN AREA — block panel or welcome ── */}
+      {!showScore && (
+        <div style={{ flex: 1, overflow: "hidden", paddingTop: 56, paddingBottom: 76 }}>
+          {panelIdx !== null ? (
+            <BlockPanel
+              block={session.blocks[panelIdx]} blockIdx={panelIdx} t={t} lang={lang}
+              running={running && activeBlock === panelIdx}
+              elapsed={activeBlock === panelIdx ? elapsed : 0}
+              onStartStop={() => (running && activeBlock === panelIdx) ? stopBlock() : startBlock(panelIdx)}
+              onChange={(field, val) => updateBlock(panelIdx, field, val)}
+              session={session} onUpdate={onUpdate} onOpenScore={openScore}
+            />
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", padding: 32, textAlign: "center", gap: 20 }}>
+              <img src={icon("study", darkMode)} alt="" style={{ width: 56, height: 56, opacity: 0.85 }} />
+              <div style={{ fontFamily: "'Playfair Display', serif", color: "var(--c-heading2)", fontSize: 17, fontWeight: 700 }}>{session.date}</div>
+              <div style={{ color: "#8fbc8f", fontSize: 14 }}>{lang === "es" ? "Toca un bloque abajo para empezar" : "Tap a block below to start"}</div>
+              <button onClick={openScore}
+                style={{ background: "rgba(74,124,89,0.12)", border: "1px solid #4a7c59", borderRadius: 12, color: "#4a7c59", cursor: "pointer", padding: "12px 24px", fontSize: 15, fontWeight: 700, fontFamily: "inherit", display: "flex", alignItems: "center", gap: 8 }}>
+                <img src={icon("scores", true)} alt="" style={{ width: 20, height: 20 }} />
+                {lang === "es" ? "Abrir partitura" : "Open score"}
               </button>
             </div>
-            <textarea
-              placeholder={t.blockPh(block.section)}
-              value={block.notes}
-              onChange={(e) => updateBlock(i, "notes", e.target.value)}
-              style={{ width: "100%", border: "1px solid #ddd8cc", borderRadius: 8, padding: "10px 12px", resize: "vertical", minHeight: 60, background: "#faf9f5", color: "#2d3a2d", fontSize: 14, outline: "none" }}
-            />
-            <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 10, flexWrap: "wrap" }}>
-              <label style={{ color: "#6b8f6b", fontSize: 13 }}>{t.timerLabel}</label>
-              <input type="number" min={1} max={120} value={block.time} onChange={(e) => updateBlock(i, "time", +e.target.value)}
-                style={{ width: 60, padding: "4px 8px", border: "1px solid #ddd8cc", borderRadius: 6, background: "#fff", color: "#2d4a35", textAlign: "center" }} />
-              <span style={{ color: "#6b8f6b", fontSize: 13 }}>{t.min}</span>
-              <label style={{ display: "flex", alignItems: "center", gap: 6, color: "#6b8f6b", fontSize: 13, cursor: "pointer" }}>
-                <input type="checkbox" checked={block.alarmEnabled} onChange={(e) => updateBlock(i, "alarmEnabled", e.target.checked)} style={{ accentColor: "#4a7c59" }} />
-                {t.alarm}
-              </label>
-            </div>
-            {(block.section === "obras" || block.section === "repertoire") && (
-              <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
-                <input id={`search-${i}`} placeholder={t.searchPh}
-                  style={{ flex: 1, padding: "6px 10px", border: "1px solid #ddd8cc", borderRadius: 8, background: "#faf9f5", fontSize: 13, color: "#2d4a35", minWidth: 120 }}
-                  onKeyDown={(e) => { if (e.key === "Enter") window.open(`https://open.spotify.com/search/${encodeURIComponent(e.target.value)}`, "_blank"); }} />
-                <button onClick={() => { const v = document.getElementById(`search-${i}`)?.value || block.notes; window.open(`https://open.spotify.com/search/${encodeURIComponent(v)}`, "_blank"); }}
-                  style={{ background: "#1DB954", color: "#fff", border: "none", borderRadius: 8, padding: "6px 12px", cursor: "pointer", fontSize: 12, fontWeight: 700 }}>Spotify</button>
-                <button onClick={() => { const v = document.getElementById(`search-${i}`)?.value || block.notes; window.open(`https://music.apple.com/search?term=${encodeURIComponent(v)}`, "_blank"); }}
-                  style={{ background: "#fc3c44", color: "#fff", border: "none", borderRadius: 8, padding: "6px 10px", cursor: "pointer", fontSize: 12, fontWeight: 700 }}>Apple</button>
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
-
-      <div style={{ marginBottom: 24 }}><ScaleInfo /></div>
-
-      <div style={{ background: "#fff", borderRadius: 16, padding: 20, border: "1px solid #ddd8cc", marginBottom: 24 }}>
-        <h4 style={{ fontFamily: "'Playfair Display', serif", color: "#2d4a35", marginBottom: 14 }}>{t.links.title}</h4>
-        <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
-          <input value={newLink} onChange={(e) => setNewLink(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") addLink(); }}
-            placeholder={t.links.ph}
-            style={{ flex: 1, padding: "8px 12px", border: "1px solid #ddd8cc", borderRadius: 8, background: "#faf9f5", color: "#2d4a35", fontSize: 14 }} />
-          <button onClick={addLink} style={{ background: "#4a7c59", color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", cursor: "pointer", fontWeight: 700 }}>+</button>
+          )}
         </div>
-        {session.links.length === 0 && <div style={{ color: "#aaa", fontSize: 13 }}>{t.links.empty}</div>}
-        {session.links.map((link, i) => (
-          <div key={link.id} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, background: "#f5f2eb", borderRadius: 8, padding: "8px 12px" }}>
-            <a href={link.url} target="_blank" rel="noreferrer" style={{ color: "#4a7c59", flex: 1, fontSize: 13, wordBreak: "break-all" }}>{link.url}</a>
-            <button onClick={() => { const u = { ...session, links: session.links.filter((_, j) => j !== i) }; onUpdate(u); }} style={{ background: "none", border: "none", color: "#c0504d", cursor: "pointer", fontSize: 16 }}>×</button>
+      )}
+
+      {/* ── BOTTOM BAR ── */}
+      <div style={barBase("bottom")}>
+        {running && (
+          <div style={{ padding: "5px 14px 4px", display: "flex", alignItems: "center", gap: 10, borderBottom: "1px solid rgba(74,124,89,0.1)" }}>
+            <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#ef4444", display: "inline-block", animation: "pulse 1s infinite", flexShrink: 0 }} />
+            <span style={{ color: "#e8e4d8", fontFamily: "monospace", fontSize: 13, fontWeight: 700, minWidth: 44 }}>{fmt(elapsed)}</span>
+            <div style={{ flex: 1, background: "rgba(255,255,255,0.07)", borderRadius: 3, height: 4, overflow: "hidden" }}>
+              <div style={{ background: "#4a7c59", height: "100%", borderRadius: 3, width: `${pct}%`, transition: "width 1s linear" }} />
+            </div>
+            <span style={{ color: "#3d5e45", fontSize: 11, minWidth: 38, textAlign: "right" }}>{fmt(targetSecs)}</span>
           </div>
-        ))}
+        )}
+        <div style={{ display: "flex", padding: "6px 8px 8px", gap: 4 }}>
+          {session.blocks.map((block, i) => {
+            const isActive    = panelIdx === i && !showScore;
+            const hasMaterial = !!(block.notes?.trim() || block.elapsed > 0);
+            return (
+              <button key={i} onClick={() => toggleBlock(i)}
+                style={{ flex: 1, padding: "8px 4px 6px", background: isActive ? "rgba(74,124,89,0.3)" : "transparent", border: `1px solid ${isActive ? "#4a7c59" : "transparent"}`, borderRadius: 10, color: isActive ? "#e8e4d8" : "#6b8f6b", cursor: "pointer", textAlign: "center", fontFamily: "inherit", fontSize: 10, fontWeight: isActive ? 700 : 400, position: "relative", transition: "background 0.15s, color 0.15s" }}>
+                <div style={{ height: 22, display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 3 }}>
+                  <img src={icon(BLOCK_SVG[i], true)} alt="" style={{ width: 20, height: 20, opacity: isActive ? 1 : 0.5 }} />
+                </div>
+                <div style={{ lineHeight: 1.2, textTransform: "capitalize" }}>{t.blocks[i]}</div>
+                {hasMaterial && <span style={{ position: "absolute", top: 5, right: 5, width: 6, height: 6, borderRadius: "50%", background: "#4a7c59" }} />}
+                {running && activeBlock === i && <span style={{ position: "absolute", top: 5, left: 5, width: 6, height: 6, borderRadius: "50%", background: "#ef4444", animation: "pulse 1s infinite" }} />}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
-      <RecordingPanel session={session} onUpdate={onUpdate} />
+      {/* Touch zones — activate bars when they are hidden */}
+      {!showBars && (
+        <>
+          <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 44, zIndex: 50 }} onPointerDown={triggerBars} />
+          <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: 70, zIndex: 50 }} onPointerDown={triggerBars} />
+        </>
+      )}
 
+      {/* ── FINISH MODAL ── */}
       {showFinish && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100 }}>
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.65)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200 }}>
           <div style={{ background: "#1a2e22", borderRadius: 20, padding: 32, maxWidth: 380, width: "90%", textAlign: "center" }}>
-            <div style={{ fontSize: 48, marginBottom: 12 }}>🎉</div>
+            <img src={icon("study", true)} alt="" style={{ width: 56, height: 56, marginBottom: 12 }} />
             <div style={{ fontFamily: "'Playfair Display', serif", color: "#e8e4d8", fontSize: 22, marginBottom: 8 }}>{t.finishModal.title}</div>
-            <div style={{ color: "#8fbc8f", marginBottom: 24 }}>
-              {t.finishModal.total} {fmt(session.blocks.reduce((a, b) => a + (b.elapsed || 0), 0))}
-            </div>
+            <div style={{ color: "#8fbc8f", marginBottom: 24 }}>{t.finishModal.total} {fmt(totalElapsed + (running ? elapsed : 0))}</div>
             <div style={{ display: "grid", gap: 10 }}>
-              <button onClick={() => { onFinish(); setShowFinish(false); }} style={{ padding: 14, background: "#4a7c59", color: "#fff", border: "none", borderRadius: 12, cursor: "pointer", fontFamily: "'Playfair Display', serif", fontSize: 16, fontWeight: 700 }}>
+              <button onClick={() => { if (running) stopBlock(); onFinish(); setShowFinish(false); }}
+                style={{ padding: 14, background: "#4a7c59", color: "#fff", border: "none", borderRadius: 12, cursor: "pointer", fontFamily: "'Playfair Display', serif", fontSize: 16, fontWeight: 700 }}>
                 {t.finishModal.save}
               </button>
-              <button onClick={() => setShowFinish(false)} style={{ padding: 12, background: "transparent", color: "#8fbc8f", border: "1px solid #4a7c59", borderRadius: 12, cursor: "pointer" }}>
+              <button onClick={() => setShowFinish(false)}
+                style={{ padding: 12, background: "transparent", color: "#8fbc8f", border: "1px solid #4a7c59", borderRadius: 12, cursor: "pointer" }}>
                 {t.finishModal.keep}
               </button>
             </div>
@@ -885,40 +1119,254 @@ function SessionView({ session, onUpdate, onFinish }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Class Session View — placeholder (teacher-student real-time sync)
+// ─────────────────────────────────────────────────────────────────────────────
+function ClassSessionView({ lang }) {
+  const { darkMode } = useLang();
+  const studentId = store.str("studentId");
+  const [plan,        setPlan]        = useState(null);   // { plan, teacherName, updatedAt }
+  const [loading,     setLoading]     = useState(true);
+  const [connected,   setConnected]   = useState(false);
+
+  useEffect(() => {
+    if (!db || !studentId) { setLoading(false); return; }
+    setConnected(true);
+    setLoading(true);
+    getDoc(doc(db, "classPlan", studentId))
+      .then(d => { if (d.exists()) setPlan(d.data()); })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+    // Live updates
+    const unsub = onSnapshot(doc(db, "classPlan", studentId),
+      d => { if (d.exists()) setPlan(d.data()); setLoading(false); },
+      () => setLoading(false)
+    );
+    return () => unsub();
+  }, [studentId]);
+
+  const fmtTs = (ts) => {
+    if (!ts) return "";
+    const d = ts?.toDate ? ts.toDate() : new Date(ts);
+    return d.toLocaleString(lang === "es" ? "es" : "en", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
+  };
+
+  if (!studentId) {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: 340, padding: 32, textAlign: "center", gap: 18 }}>
+        <img src={icon("class-session", darkMode)} alt="" style={{ width: 56, height: 56 }} />
+        <div style={{ fontFamily: "'Playfair Display', serif", color: "#2d4a35", fontSize: 22, fontWeight: 700 }}>
+          {lang === "es" ? "Sesión de Clase" : "Class Session"}
+        </div>
+        <div style={{ color: "var(--c-muted)", fontSize: 14, lineHeight: 1.7, maxWidth: 340 }}>
+          {lang === "es"
+            ? "Tu código de estudiante aún no está configurado. Visita la sección Inicio para verlo."
+            : "Your student code is not set up yet. Visit the Home section to find it."}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ maxWidth: 560, margin: "0 auto", padding: "16px 16px 32px" }}>
+      <div style={{ textAlign: "center", marginBottom: 24 }}>
+        <img src={icon("class-session", darkMode)} alt="" style={{ width: 48, height: 48, marginBottom: 6 }} />
+        <div style={{ fontFamily: "'Playfair Display', serif", color: "var(--c-heading2)", fontSize: 20, fontWeight: 700 }}>
+          {lang === "es" ? "Sesión de Clase" : "Class Session"}
+        </div>
+      </div>
+
+      {loading ? (
+        <div style={{ textAlign: "center", color: "#8fbc8f", padding: "32px 0", fontSize: 14 }}>
+          {lang === "es" ? "Cargando…" : "Loading…"}
+        </div>
+      ) : plan ? (
+        <div style={{ background: "#1a2e22", borderRadius: 16, padding: "18px 20px", border: "1px solid #2d4a35" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+            <div style={{ color: "#8fbc8f", fontSize: 11, textTransform: "uppercase", letterSpacing: 1.5, display: "flex", alignItems: "center", gap: 6 }}>
+              <img src={icon("lesson-plan", true)} alt="" style={{ width: 14, height: 14 }} />
+              {lang === "es" ? "Plan de hoy" : "Today's plan"}
+            </div>
+            {plan.updatedAt && (
+              <div style={{ color: "#4a7c59", fontSize: 11 }}>{fmtTs(plan.updatedAt)}</div>
+            )}
+          </div>
+          {plan.teacherName && (
+            <div style={{ color: "#6b8f6b", fontSize: 12, marginBottom: 10 }}>
+              {lang === "es" ? "Enviado por" : "Sent by"}: <span style={{ color: "#8fbc8f", fontWeight: 700 }}>{plan.teacherName}</span>
+            </div>
+          )}
+          <div style={{ color: "#e8e4d8", fontSize: 14, lineHeight: 1.8, whiteSpace: "pre-wrap" }}>{plan.plan}</div>
+        </div>
+      ) : (
+        <div style={{ textAlign: "center", color: "var(--c-muted)", padding: "32px 0", fontSize: 14 }}>
+          {lang === "es"
+            ? "Tu maestro aún no ha publicado el plan de hoy."
+            : "Your teacher hasn't published today's plan yet."}
+        </div>
+      )}
+
+      {!firebaseConfigured && (
+        <div style={{ background: "rgba(192,80,77,0.12)", border: "1px solid #c0504d44", borderRadius: 12, padding: 12, marginTop: 20, color: "#fca5a5", fontSize: 12, textAlign: "center" }}>
+          {lang === "es" ? "Firebase no configurado — modo demo." : "Firebase not configured — demo mode."}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Home View
 // ─────────────────────────────────────────────────────────────────────────────
-function HomeView({ goals, sessions, onStart, onContinue, activeSession }) {
-  const { t } = useLang();
+function TeacherNotesPanel({ notes, studentId, onSeen, unreadCount }) {
+  const { t, lang } = useLang();
+  const [open, setOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [name, setName] = useState(() => store.str("studentName"));
+  const [editingName, setEditingName] = useState(!store.str("studentName"));
+
+  const saveName = () => {
+    store.setStr("studentName", name);
+    setEditingName(false);
+  };
+
+  const copyCode = () => {
+    navigator.clipboard?.writeText(studentId).catch(() => {});
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1800);
+  };
+
+  const toggle = () => {
+    setOpen((v) => !v);
+    if (!open) onSeen();
+  };
+
+  const fmt = (ts) =>
+    ts?.toDate
+      ? ts.toDate().toLocaleString("es", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })
+      : "";
+
+  return (
+    <div style={{ marginBottom: 20 }}>
+      {/* Code + toggle row */}
+      <div style={{ background: "#1a2e22", borderRadius: 14, padding: "12px 16px", display: "flex", alignItems: "center", gap: 10 }}>
+        <div style={{ flex: 1 }}>
+          {/* Student name */}
+          {editingName ? (
+            <div style={{ display: "flex", gap: 6, marginBottom: 8, alignItems: "center" }}>
+              <input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && saveName()}
+                placeholder="Tu nombre"
+                autoFocus
+                style={{ flex: 1, padding: "5px 10px", borderRadius: 7, border: "1px solid #4a7c59", background: "#2d4a35", color: "#e8e4d8", fontSize: 13, outline: "none" }}
+              />
+              <button onClick={saveName}
+                style={{ padding: "5px 10px", background: "#4a7c59", color: "#fff", border: "none", borderRadius: 7, cursor: "pointer", fontSize: 12, fontWeight: 700 }}>
+                OK
+              </button>
+            </div>
+          ) : (
+            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
+              <span style={{ color: "#e8e4d8", fontWeight: 700, fontSize: 14 }}>{name}</span>
+              <button onClick={() => setEditingName(true)}
+                style={{ background: "none", border: "none", color: "#6b8f6b", cursor: "pointer", fontSize: 11, padding: 0 }}>
+                ✏️
+              </button>
+            </div>
+          )}
+          <div style={{ color: "#6b8f6b", fontSize: 10, textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 2 }}>
+            {t.notes.code}
+          </div>
+          <div style={{ fontFamily: "'Geist Mono', monospace", fontSize: 20, fontWeight: 500, color: "#e8e4d8", letterSpacing: 4 }}>
+            {studentId}
+          </div>
+          <div style={{ color: "#3d5e45", fontSize: 11, marginTop: 2 }}>{t.notes.share}</div>
+        </div>
+        <button onClick={copyCode}
+          style={{ background: copied ? "#4a7c59" : "#2d4a35", color: "#e8e4d8", border: "1px solid #4a7c59", borderRadius: 8, padding: "6px 12px", cursor: "pointer", fontSize: 12, fontWeight: 700, flexShrink: 0 }}>
+          {copied ? "✓" : (lang === "es" ? "Copiar" : "Copy")}
+        </button>
+        {notes.length > 0 && (
+          <button onClick={toggle}
+            style={{ position: "relative", background: open ? "#4a7c59" : "#2d4a35", color: "#e8e4d8", border: "1px solid #4a7c59", borderRadius: 8, padding: "6px 12px", cursor: "pointer", fontSize: 12, fontWeight: 700, flexShrink: 0, display: "flex", alignItems: "center", gap: 6 }}>
+            <img src={icon("private-note", true)} alt="" style={{ width: 16, height: 16 }} />
+            {notes.length} {open ? "▲" : "▼"}
+            {unreadCount > 0 && (
+              <span style={{ position: "absolute", top: -4, right: -4, width: 9, height: 9, borderRadius: "50%", background: "#c0504d", border: "2px solid #1a2e22" }} />
+            )}
+          </button>
+        )}
+      </div>
+
+      {/* Notes list */}
+      {open && notes.length > 0 && (
+        <div style={{ marginTop: 8, display: "grid", gap: 8 }}>
+          {notes.map((n) => (
+            <div key={n.id} style={{ background: "var(--c-card-green)", borderRadius: 12, padding: "14px 16px", border: "1px solid var(--c-border-green)" }}>
+              <div style={{ fontSize: 14, color: "var(--c-text)", lineHeight: 1.6, marginBottom: 8, whiteSpace: "pre-wrap" }}>
+                {n.text}
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span style={{ color: "#4a7c59", fontSize: 12, fontWeight: 700, display: "inline-flex", alignItems: "center", gap: 4 }}>
+                  <img src={icon("sent-note", true)} alt="" style={{ width: 14, height: 14 }} />
+                  {n.teacher}
+                </span>
+                <span style={{ color: "#6b8f6b", fontSize: 11 }}>{fmt(n.createdAt)}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {notes.length === 0 && firebaseConfigured && (
+        <div style={{ color: "#6b8f6b", fontSize: 12, textAlign: "center", marginTop: 8 }}>
+          {t.notes.empty}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function HomeView({ goals, sessions, onStart, onContinue, activeSession, teacherNotes = [], studentId = "", onSeenNotes = () => {}, unreadCount = 0 }) {
+  const { t, darkMode } = useLang();
   const totalMinutes = sessions.reduce((acc, s) => acc + s.blocks.reduce((a, b) => a + (b.elapsed || 0), 0), 0);
   const weekSessions = sessions.filter((s) => (new Date() - new Date(s.dateKey)) / 86400000 <= 7).length;
 
   return (
     <div>
       <div style={{ marginBottom: 28 }}>
-        <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 32, color: "#1a2e22", fontWeight: 900, lineHeight: 1.2 }}>
+        <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 32, color: "var(--c-heading)", fontWeight: 900, lineHeight: 1.2 }}>
           {t.greeting}<br /><span style={{ color: "#4a7c59" }}>{t.musician}</span>
         </div>
-        <div style={{ color: "#6b8f6b", marginTop: 6, fontSize: 15 }}>
+        <div style={{ color: "var(--c-heading2)", marginTop: 6, fontSize: 15, fontStyle: "italic", fontFamily: "'Lora', Georgia, serif" }}>
+          {t.tagline}
+        </div>
+        <div style={{ color: "var(--c-muted)", marginTop: 4, fontSize: 13 }}>
           {new Date().toLocaleDateString(t.locale, { weekday: "long", year: "numeric", month: "long", day: "numeric" })}
         </div>
       </div>
+      {firebaseConfigured && studentId && (
+        <TeacherNotesPanel notes={teacherNotes} studentId={studentId} onSeen={onSeenNotes} unreadCount={unreadCount} />
+      )}
+
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 24 }}>
         {[
-          { label: t.stats.week, value: weekSessions, icon: "📅" },
-          { label: t.stats.minutes, value: Math.round(totalMinutes / 60), icon: "⏱" },
-          { label: t.stats.saved, value: sessions.length, icon: "📔" },
-        ].map(({ label, value, icon }) => (
+          { label: t.stats.week, value: weekSessions, iconFile: "goals" },
+          { label: t.stats.minutes, value: Math.round(totalMinutes / 60), iconFile: "study" },
+          { label: t.stats.saved, value: sessions.length, iconFile: "journal" },
+        ].map(({ label, value, iconFile }) => (
           <div key={label} style={{ background: "#1a2e22", borderRadius: 16, padding: "16px 12px", textAlign: "center" }}>
-            <div style={{ fontSize: 22, marginBottom: 4 }}>{icon}</div>
+            <img src={icon(iconFile, true)} alt="" style={{ width: 28, height: 28, marginBottom: 4 }} />
             <div style={{ color: "#8fbc8f", fontSize: 22, fontWeight: 900, fontFamily: "'Playfair Display', serif" }}>{value}</div>
             <div style={{ color: "#6b8f6b", fontSize: 11, lineHeight: 1.3 }}>{label}</div>
           </div>
         ))}
       </div>
       {(goals.daily || goals.monthly) && (
-        <div style={{ background: "#e8f0e0", borderRadius: 16, padding: 20, marginBottom: 20, border: "1px solid #c8d5c0" }}>
-          {goals.daily && <div style={{ marginBottom: 8 }}><span style={{ color: "#4a7c59", fontWeight: 700 }}>{t.goalsSummary.today}</span> <span style={{ color: "#2d4a35" }}>{goals.daily}</span></div>}
-          {goals.monthly && <div><span style={{ color: "#e07b39", fontWeight: 700 }}>{t.goalsSummary.month}</span> <span style={{ color: "#2d4a35" }}>{goals.monthly}</span></div>}
+        <div style={{ background: "var(--c-card-green)", borderRadius: 16, padding: 20, marginBottom: 20, border: "1px solid var(--c-border-green)" }}>
+          {goals.daily && <div style={{ marginBottom: 8 }}><span style={{ color: "#4a7c59", fontWeight: 700 }}>{t.goalsSummary.today}</span> <span style={{ color: "var(--c-heading2)" }}>{goals.daily}</span></div>}
+          {goals.monthly && <div><span style={{ color: "#e07b39", fontWeight: 700 }}>{t.goalsSummary.month}</span> <span style={{ color: "var(--c-heading2)" }}>{goals.monthly}</span></div>}
         </div>
       )}
       {activeSession && !activeSession.completed ? (
@@ -976,7 +1424,7 @@ function GoalsView({ goals, setGoals, sessions }) {
 
   return (
     <div>
-      <h2 style={{ fontFamily: "'Playfair Display', serif", color: "#1a2e22", fontSize: 26, fontWeight: 900, marginBottom: 24 }}>{t.goalsView.title}</h2>
+      <h2 style={{ fontFamily: "'Playfair Display', serif", color: "var(--c-heading)", fontSize: 26, fontWeight: 900, marginBottom: 24 }}>{t.goalsView.title}</h2>
       <div style={{ display: "grid", gap: 16, marginBottom: 28 }}>
         <div style={{ background: "#1a2e22", borderRadius: 16, padding: 20 }}>
           <label style={{ color: "#8fbc8f", fontSize: 13, textTransform: "uppercase", letterSpacing: 2, display: "block", marginBottom: 8 }}>{t.goalsView.dayLabel}</label>
@@ -989,8 +1437,8 @@ function GoalsView({ goals, setGoals, sessions }) {
             style={{ width: "100%", background: "#2d4a35", border: "none", borderRadius: 10, padding: 14, color: "#e8e4d8", resize: "none", minHeight: 80, fontSize: 15, outline: "none" }} />
         </div>
       </div>
-      <div style={{ background: "#fff", borderRadius: 20, padding: 24, border: "1px solid #ddd8cc" }}>
-        <div style={{ fontFamily: "'Playfair Display', serif", color: "#2d4a35", fontSize: 18, fontWeight: 700, marginBottom: 16, textAlign: "center" }}>
+      <div style={{ background: "var(--c-card)", borderRadius: 20, padding: 24, border: "1px solid var(--c-border)" }}>
+        <div style={{ fontFamily: "'Playfair Display', serif", color: "var(--c-heading2)", fontSize: 18, fontWeight: 700, marginBottom: 16, textAlign: "center" }}>
           {today.toLocaleDateString(t.locale, { month: "long", year: "numeric" }).toUpperCase()}
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 4, marginBottom: 8 }}>
@@ -1004,7 +1452,7 @@ function GoalsView({ goals, setGoals, sessions }) {
             const practiced = practicedDays.has(dateKey);
             const isToday   = dayNum === today.getDate();
             return (
-              <div key={dayNum} style={{ aspectRatio: "1", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", background: practiced ? "#4a7c59" : isToday ? "#e8f0e0" : "transparent", border: isToday ? "2px solid #4a7c59" : "2px solid transparent", color: practiced ? "#fff" : isToday ? "#2d4a35" : "#6b8f6b", fontSize: 13, fontWeight: practiced || isToday ? 700 : 400 }}>
+              <div key={dayNum} style={{ aspectRatio: "1", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", background: practiced ? "#4a7c59" : isToday ? "var(--c-card-green)" : "transparent", border: isToday ? "2px solid #4a7c59" : "2px solid transparent", color: practiced ? "#fff" : isToday ? "var(--c-heading2)" : "var(--c-muted)", fontSize: 13, fontWeight: practiced || isToday ? 700 : 400 }}>
                 {dayNum}
               </div>
             );
@@ -1013,11 +1461,11 @@ function GoalsView({ goals, setGoals, sessions }) {
         <div style={{ display: "flex", gap: 16, marginTop: 16, justifyContent: "center" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <div style={{ width: 12, height: 12, borderRadius: "50%", background: "#4a7c59" }} />
-            <span style={{ fontSize: 12, color: "#6b8f6b" }}>{t.goalsView.practiced}</span>
+            <span style={{ fontSize: 12, color: "var(--c-muted)" }}>{t.goalsView.practiced}</span>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <div style={{ width: 12, height: 12, borderRadius: "50%", border: "2px solid #4a7c59" }} />
-            <span style={{ fontSize: 12, color: "#6b8f6b" }}>{t.goalsView.today}</span>
+            <span style={{ fontSize: 12, color: "var(--c-muted)" }}>{t.goalsView.today}</span>
           </div>
         </div>
       </div>
@@ -1029,7 +1477,7 @@ function GoalsView({ goals, setGoals, sessions }) {
 // History View
 // ─────────────────────────────────────────────────────────────────────────────
 function HistoryView({ sessions }) {
-  const { t } = useLang();
+  const { t, darkMode } = useLang();
   const [selected, setSelected] = useState(null);
   const sorted = [...sessions].sort((a, b) => b.id - a.id);
 
@@ -1040,27 +1488,27 @@ function HistoryView({ sessions }) {
         <button onClick={() => setSelected(null)} style={{ background: "none", border: "none", color: "#4a7c59", cursor: "pointer", fontFamily: "inherit", fontSize: 15, marginBottom: 16 }}>
           {t.history.back}
         </button>
-        <h3 style={{ fontFamily: "'Playfair Display', serif", color: "#1a2e22", marginBottom: 4 }}>{s.date}</h3>
-        <div style={{ color: "#6b8f6b", fontSize: 13, marginBottom: 20 }}>
+        <h3 style={{ fontFamily: "'Playfair Display', serif", color: "var(--c-heading)", marginBottom: 4 }}>{s.date}</h3>
+        <div style={{ color: "var(--c-muted)", fontSize: 13, marginBottom: 20 }}>
           {t.history.total} {fmt(s.blocks.reduce((a, b) => a + (b.elapsed || 0), 0))}
         </div>
         {s.blocks.filter((b) => b.elapsed > 0 || b.notes).map((b, i) => (
-          <div key={i} style={{ background: "#fff", borderRadius: 14, padding: 16, marginBottom: 12, border: "1px solid #ddd8cc" }}>
-            <div style={{ fontFamily: "'Playfair Display', serif", fontWeight: 700, color: "#2d4a35", textTransform: "capitalize", marginBottom: 6 }}>
+          <div key={i} style={{ background: "var(--c-card)", borderRadius: 14, padding: 16, marginBottom: 12, border: "1px solid var(--c-border)" }}>
+            <div style={{ fontFamily: "'Playfair Display', serif", fontWeight: 700, color: "var(--c-heading2)", textTransform: "capitalize", marginBottom: 6 }}>
               {b.section} — <span style={{ color: "#4a7c59" }}>{fmt(b.elapsed || 0)}</span>
             </div>
-            {b.notes && <div style={{ color: "#6b8f6b", fontSize: 14 }}>{b.notes}</div>}
+            {b.notes && <div style={{ color: "var(--c-muted)", fontSize: 14 }}>{b.notes}</div>}
           </div>
         ))}
         {s.links?.length > 0 && (
-          <div style={{ background: "#f5f2eb", borderRadius: 14, padding: 16, marginBottom: 12 }}>
-            <div style={{ fontWeight: 700, color: "#2d4a35", marginBottom: 8 }}>{t.history.links}</div>
+          <div style={{ background: "var(--c-card-alt)", borderRadius: 14, padding: 16, marginBottom: 12 }}>
+            <div style={{ fontWeight: 700, color: "var(--c-heading2)", marginBottom: 8 }}>{t.history.links}</div>
             {s.links.map((l) => <a key={l.id} href={l.url} target="_blank" rel="noreferrer" style={{ display: "block", color: "#4a7c59", fontSize: 13, marginBottom: 4 }}>{l.url}</a>)}
           </div>
         )}
         {s.recordings?.length > 0 && (
-          <div style={{ background: "#f5f2eb", borderRadius: 14, padding: 16 }}>
-            <div style={{ fontWeight: 700, color: "#2d4a35", marginBottom: 8 }}>{t.history.recs}</div>
+          <div style={{ background: "var(--c-card-alt)", borderRadius: 14, padding: 16 }}>
+            <div style={{ fontWeight: 700, color: "var(--c-heading2)", marginBottom: 8 }}>{t.history.recs}</div>
             {s.recordings.map((r) =>
               r.type === "video"
                 ? <video key={r.id} src={r.url} controls style={{ width: "100%", borderRadius: 8, marginBottom: 8 }} />
@@ -1074,24 +1522,29 @@ function HistoryView({ sessions }) {
 
   return (
     <div>
-      <h2 style={{ fontFamily: "'Playfair Display', serif", color: "#1a2e22", fontSize: 26, fontWeight: 900, marginBottom: 24 }}>{t.history.title}</h2>
+      <h2 style={{ fontFamily: "'Playfair Display', serif", color: "var(--c-heading)", fontSize: 26, fontWeight: 900, marginBottom: 24 }}>{t.history.title}</h2>
       {sorted.length === 0 && (
-        <div style={{ textAlign: "center", color: "#aaa", padding: 40, fontSize: 16, whiteSpace: "pre-line" }}>
+        <div style={{ textAlign: "center", color: "var(--c-muted)", padding: 40, fontSize: 16, whiteSpace: "pre-line" }}>
           {t.history.empty}
         </div>
       )}
       {sorted.map((s) => {
         const totalSecs = s.blocks.reduce((a, b) => a + (b.elapsed || 0), 0);
         return (
-          <button key={s.id} onClick={() => setSelected(s.id)} style={{ width: "100%", textAlign: "left", background: "#fff", border: "1px solid #ddd8cc", borderRadius: 16, padding: "16px 20px", marginBottom: 12, cursor: "pointer", fontFamily: "inherit" }}>
-            <div style={{ fontFamily: "'Playfair Display', serif", color: "#2d4a35", fontWeight: 700, marginBottom: 4 }}>{s.date}</div>
+          <button key={s.id} onClick={() => setSelected(s.id)} style={{ width: "100%", textAlign: "left", background: "var(--c-card)", border: "1px solid var(--c-border)", borderRadius: 16, padding: "16px 20px", marginBottom: 12, cursor: "pointer", fontFamily: "inherit" }}>
+            <div style={{ fontFamily: "'Playfair Display', serif", color: "var(--c-heading2)", fontWeight: 700, marginBottom: 4 }}>{s.date}</div>
             <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
-              <span style={{ color: "#4a7c59", fontSize: 13 }}>⏱ {fmt(totalSecs)}</span>
+              <span style={{ color: "#4a7c59", fontSize: 13 }}>{fmt(totalSecs)}</span>
               {s.blocks.filter((b) => b.elapsed > 0).map((b) => (
-                <span key={b.section} style={{ color: "#6b8f6b", fontSize: 13, textTransform: "capitalize" }}>• {b.section}</span>
+                <span key={b.section} style={{ color: "var(--c-muted)", fontSize: 13, textTransform: "capitalize" }}>• {b.section}</span>
               ))}
-              {s.links?.length > 0 && <span style={{ color: "#e07b39", fontSize: 13 }}>🔗 {s.links.length}</span>}
-              {s.recordings?.length > 0 && <span style={{ color: "#e07b39", fontSize: 13 }}>🎙 {s.recordings.length}</span>}
+              {s.links?.length > 0 && <span style={{ color: "#e07b39", fontSize: 13 }}>· {s.links.length} links</span>}
+              {s.recordings?.length > 0 && (
+                <span style={{ color: "#e07b39", fontSize: 13, display: "inline-flex", alignItems: "center", gap: 3 }}>
+                  <img src={icon("audio", darkMode)} alt="" style={{ width: 13, height: 13 }} />
+                  {s.recordings.length}
+                </span>
+              )}
             </div>
           </button>
         );
@@ -1101,20 +1554,103 @@ function HistoryView({ sessions }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Student ID — generated once, stored in localStorage
+// ─────────────────────────────────────────────────────────────────────────────
+const ID_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+function getStudentId() {
+  let id = store.str("studentId");
+  if (!id) {
+    id = Array.from({ length: 6 }, () => ID_CHARS[Math.floor(Math.random() * ID_CHARS.length)]).join("");
+    store.setStr("studentId", id);
+  }
+  return id;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Main App
 // ─────────────────────────────────────────────────────────────────────────────
 export default function App() {
-  const [lang, setLang]           = useState(() => { try { return localStorage.getItem("lang") || "es"; } catch { return "es"; } });
+  const [lang, setLang]           = useState(() => store.str("lang", "es"));
   const t                         = T[lang];
-  const [showLangMenu, setShowLangMenu] = useState(false);
+  const [darkMode, setDarkMode]   = useState(() => store.str("darkMode") === "true");
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const [view, setView]           = useState("home");
-  const [sessions, setSessions]   = useState(() => { try { return JSON.parse(localStorage.getItem("sessions") || "[]"); } catch { return []; } });
+  const [navHidden, setNavHidden] = useState(false);
+  const [studentId, setStudentId]  = useState(getStudentId);
+  const [teacherNotes, setTeacherNotes] = useState([]);
+  const [notesLastSeen, setNotesLastSeen] = useState(() => store.str("notesLastSeen"));
+  const [sessions, setSessions]   = useState(() => store.get("sessions", []));
   const [activeSession, setActiveSession] = useState(null);
-  const [goals, setGoals]         = useState(() => { try { return JSON.parse(localStorage.getItem("goals") || '{"daily":"","monthly":""}'); } catch { return { daily: "", monthly: "" }; } });
+  const [goals, setGoals]         = useState(() => store.get("goals", { daily: "", monthly: "" }));
+  const [user, setUser]           = useState(null);
+  const [authLoading, setAuthLoading] = useState(true);
 
-  useEffect(() => { try { localStorage.setItem("sessions", JSON.stringify(sessions)); } catch {} }, [sessions]);
-  useEffect(() => { try { localStorage.setItem("goals",    JSON.stringify(goals));    } catch {} }, [goals]);
-  useEffect(() => { try { localStorage.setItem("lang",     lang);                     } catch {} }, [lang]);
+  // Firebase Auth listener — sincroniza el código de estudiante entre dispositivos
+  useEffect(() => {
+    if (!auth) { setAuthLoading(false); return; }
+    const unsub = onAuthStateChanged(auth, async (u) => {
+      setUser(u);
+      setAuthLoading(false);
+      if (u && db) {
+        const ref = doc(db, "users", u.uid);
+        const snap = await getDoc(ref).catch(() => null);
+        if (snap && snap.exists() && snap.data().studentCode) {
+          // Ya tiene código en Firestore — usarlo en este dispositivo
+          const cloudCode = snap.data().studentCode;
+          store.setStr("studentId", cloudCode);
+          setStudentId(cloudCode);
+          await setDoc(ref, {
+            displayName: u.displayName,
+            email: u.email,
+            photoURL: u.photoURL,
+            lastSeen: new Date().toISOString(),
+          }, { merge: true }).catch(() => {});
+        } else {
+          // Primera vez — guardar el código local en Firestore
+          const localCode = store.str("studentId") || getStudentId();
+          store.setStr("studentId", localCode);
+          setStudentId(localCode);
+          await setDoc(ref, {
+            displayName: u.displayName,
+            email: u.email,
+            photoURL: u.photoURL,
+            lastSeen: new Date().toISOString(),
+            plan: "free",
+            studentCode: localCode,
+          }, { merge: true }).catch(() => {});
+        }
+      }
+    });
+    return unsub;
+  }, []);
+
+  useEffect(() => { store.set("sessions", sessions); }, [sessions]);
+  useEffect(() => { store.set("goals",    goals);    }, [goals]);
+  useEffect(() => { store.setStr("lang",  lang);     }, [lang]);
+  useEffect(() => { store.setStr("darkMode", String(darkMode)); }, [darkMode]);
+
+  // Real-time teacher notes listener
+  useEffect(() => {
+    if (!db || !studentId) return;
+    const q = query(
+      collection(db, "notes", studentId, "messages"),
+      orderBy("createdAt", "desc")
+    );
+    const unsub = onSnapshot(q, (snap) => {
+      setTeacherNotes(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+    }, () => {});
+    return unsub;
+  }, [studentId]);
+
+  const markNotesSeen = () => {
+    const now = new Date().toISOString();
+    store.setStr("notesLastSeen", now);
+    setNotesLastSeen(now);
+  };
+
+  const unreadCount = teacherNotes.filter((n) =>
+    n.createdAt?.toDate && n.createdAt.toDate().toISOString() > notesLastSeen
+  ).length;
 
   const saveSession = (session) =>
     setSessions((prev) => {
@@ -1138,67 +1674,228 @@ export default function App() {
     setView("session");
   };
 
+  const NAV_ITEMS = [
+    { id: "home",         iconFile: "home",          label: t.nav.home         },
+    { id: "scores",       iconFile: "scores",        label: t.nav.scores       },
+    { id: "tools",        iconFile: "tools",         label: t.nav.tools        },
+    { id: "goals",        iconFile: "goals",         label: t.nav.goals        },
+    { id: "history",      iconFile: "journal",       label: t.nav.history      },
+    { id: "classSession", iconFile: "class-session", label: t.nav.classSession },
+    { id: "teacher",      iconFile: "teacher",       label: t.nav.teacher      },
+  ];
+
+  const navigate = (id) => { setView(id); setNavHidden(false); setDrawerOpen(false); };
+
   return (
-    <LangCtx.Provider value={{ lang, t, setLang }}>
-      <div style={{ minHeight: "100vh", background: "#f5f2eb", fontFamily: "'Lora', Georgia, serif", color: "#2d3a2d" }}>
+    <LangCtx.Provider value={{ lang, t, setLang, darkMode }}>
+      <div data-theme={darkMode ? "dark" : "light"} style={{ minHeight: "100vh", display: "flex", flexDirection: "column", background: "var(--c-bg)", fontFamily: "'Lora', Georgia, serif", color: "var(--c-text)" }}>
         <style>{`
-          @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700;900&family=Lora:wght@400;500;600&display=swap');
+          @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;0,900;1,400&family=Lora:wght@400;500;600&family=Geist+Mono:wght@300;400;500&display=swap');
           *{box-sizing:border-box;margin:0;padding:0}
-          ::-webkit-scrollbar{width:6px}::-webkit-scrollbar-track{background:#e8e4d8}::-webkit-scrollbar-thumb{background:#4a7c59;border-radius:3px}
+          :root,[data-theme="light"]{
+            --c-bg:#f5f2eb;--c-card:#ffffff;--c-card-alt:#f5f2eb;--c-card-warm:#f0ede4;--c-card-green:#e8f0e0;
+            --c-border:#ddd8cc;--c-border-green:#c8d5c0;
+            --c-text:#0f1d15;--c-heading:#1a2e22;--c-heading2:#2d4a35;--c-muted:#6b8f6b;
+          }
+          [data-theme="dark"]{
+            --c-bg:#0f1d15;--c-card:#1a2e22;--c-card-alt:#1a2e22;--c-card-warm:#2d4a35;--c-card-green:#2d4a35;
+            --c-border:#2d4a35;--c-border-green:#3d5e45;
+            --c-text:#e8e4d8;--c-heading:#e8e4d8;--c-heading2:#8fbc8f;--c-muted:#8fbc8f;
+          }
+          ::-webkit-scrollbar{width:6px}::-webkit-scrollbar-track{background:var(--c-card)}::-webkit-scrollbar-thumb{background:#4a7c59;border-radius:3px}
           textarea,input,select,button{font-family:'Lora',Georgia,serif}
-          .lopt{display:flex;align-items:center;gap:10px;padding:12px 16px;cursor:pointer;color:#e8e4d8;font-size:14px;font-weight:600;transition:background 0.15s}
-          .lopt:hover{background:#2d4a35}.lopt.lactive{background:#4a7c59}
           @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.3}}
+          .drawer-item{display:flex;align-items:center;gap:14px;width:100%;padding:13px 20px;background:transparent;border:none;border-left:3px solid transparent;color:#8fbc8f;cursor:pointer;font-size:15px;font-family:'Lora',Georgia,serif;font-weight:400;text-align:left;transition:background 0.15s,border-color 0.15s,color 0.15s}
+          .drawer-item:hover{background:rgba(74,124,89,0.12);color:#c8d5c0}
+          .drawer-item.active{background:rgba(74,124,89,0.2);border-left-color:#4a7c59;color:#e8e4d8;font-weight:700}
         `}</style>
 
-        {/* Header */}
-        <div style={{ background: "#1a2e22", padding: "14px 20px", display: "flex", alignItems: "center", justifyContent: "space-between", boxShadow: "0 2px 12px rgba(0,0,0,0.15)" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <div style={{ fontSize: 24 }}>🎼</div>
-            <div>
-              <div style={{ fontFamily: "'Playfair Display', serif", color: "#e8e4d8", fontSize: 18, fontWeight: 900 }}>{t.appName}</div>
-              <div style={{ color: "#8fbc8f", fontSize: 10, letterSpacing: 2, textTransform: "uppercase" }}>{t.appTagline}</div>
+        {/* ── Drawer overlay ── */}
+        <div onClick={() => setDrawerOpen(false)} style={{
+          position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)",
+          zIndex: 300, opacity: drawerOpen ? 1 : 0,
+          pointerEvents: drawerOpen ? "auto" : "none",
+          transition: "opacity 0.25s",
+        }} />
+
+        {/* ── Side Drawer ── */}
+        <div style={{
+          position: "fixed", top: 0, left: 0, height: "100%", width: 280,
+          background: "#1a2e22",
+          zIndex: 400,
+          display: "flex", flexDirection: "column",
+          transform: drawerOpen ? "translateX(0)" : "translateX(-100%)",
+          transition: "transform 0.28s cubic-bezier(0.4,0,0.2,1)",
+          boxShadow: drawerOpen ? "4px 0 32px rgba(0,0,0,0.45)" : "none",
+          overflowY: "auto",
+        }}>
+          {/* Drawer brand header */}
+          <div style={{ padding: "20px 20px 16px", borderBottom: "1px solid rgba(255,255,255,0.07)" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+              <img
+                src={`${process.env.PUBLIC_URL}/atrile-logo-dark.svg`}
+                alt="Atrile"
+                style={{ height: 40, objectFit: "contain", maxWidth: 160 }}
+              />
+              <button onClick={() => setDrawerOpen(false)}
+                style={{ background: "none", border: "none", color: "#6b8f6b", cursor: "pointer", fontSize: 22, lineHeight: 1, padding: 4, flexShrink: 0 }}>✕</button>
+            </div>
+            <div style={{ color: "#4a7c59", fontSize: 11, letterSpacing: 3, textTransform: "uppercase", fontWeight: 700 }}>
+              {lang === "es" ? "Práctica Inteligente" : "Smart Practice"}
             </div>
           </div>
-          <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
-            {[{id:"home",icon:"🏠"},{id:"tools",icon:"🔧"},{id:"goals",icon:"🎯"},{id:"history",icon:"📔"},{id:"scores",icon:"🎵"}].map(({id,icon})=>(
-              <button key={id} onClick={() => setView(id)} title={t.nav[id]} style={{ background: view===id?"#4a7c59":"transparent", color:"#e8e4d8", border:"1px solid #4a7c59", borderRadius:10, padding:"7px 11px", cursor:"pointer", fontSize:15, transition:"all 0.2s" }}>
-                {icon}
-              </button>
-            ))}
-            <div style={{ position: "relative", marginLeft: 4 }}>
-              <button onClick={() => setShowLangMenu((m) => !m)} style={{ background: "#2d4a35", border: "1px solid #4a7c59", borderRadius: 10, padding: "7px 11px", cursor: "pointer", color: "#e8e4d8", display: "flex", alignItems: "center", gap: 5, fontSize: 13, fontWeight: 700 }}>
-                <span style={{ fontSize: 15 }}>{lang === "es" ? "🇨🇴" : "🇺🇸"}</span>
-                <span>{lang.toUpperCase()}</span>
-                <span style={{ fontSize: 9, opacity: 0.6 }}>{showLangMenu ? "▲" : "▼"}</span>
-              </button>
-              {showLangMenu && (
-                <div style={{ position: "absolute", top: 44, right: 0, background: "#1a2e22", border: "1px solid #4a7c59", borderRadius: 12, overflow: "hidden", zIndex: 200, minWidth: 150, boxShadow: "0 8px 24px rgba(0,0,0,0.35)" }}>
-                  <div style={{ padding: "8px 16px 4px", color: "#8fbc8f", fontSize: 10, letterSpacing: 2, textTransform: "uppercase" }}>Idioma / Language</div>
-                  {[{code:"es",flag:"🇨🇴",label:"Español",sub:"Spanish"},{code:"en",flag:"🇺🇸",label:"English",sub:"Inglés"}].map((opt) => (
-                    <div key={opt.code} className={`lopt${lang===opt.code?" lactive":""}`} onClick={() => { setLang(opt.code); setShowLangMenu(false); }}>
-                      <span style={{ fontSize: 20 }}>{opt.flag}</span>
-                      <div><div>{opt.label}</div><div style={{ fontSize: 11, opacity: 0.6 }}>{opt.sub}</div></div>
-                      {lang === opt.code && <span style={{ marginLeft: "auto", color: "#8fbc8f" }}>✓</span>}
-                    </div>
-                  ))}
+
+          {/* Nav items */}
+          <nav style={{ flex: 1, paddingTop: 8 }}>
+            {NAV_ITEMS.map(({ id, iconFile, label }) => {
+              const isActive = view === id;
+              return (
+                <button key={id} onClick={() => navigate(id)}
+                  className={`drawer-item${isActive ? " active" : ""}`}>
+                  <img
+                    src={icon(iconFile, true)}
+                    alt=""
+                    style={{ width: 22, height: 22, flexShrink: 0, opacity: isActive ? 1 : 0.55, transition: "opacity 0.15s" }}
+                  />
+                  <span>{label}</span>
+                  {id === "home" && unreadCount > 0 && (
+                    <span style={{ marginLeft: "auto", background: "#c0504d", color: "#fff", borderRadius: 10, fontSize: 11, fontWeight: 700, padding: "1px 7px", minWidth: 20, textAlign: "center" }}>
+                      {unreadCount}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </nav>
+
+          {/* User / Auth */}
+          {firebaseConfigured && (
+            <div style={{ padding: "12px 20px", borderTop: "1px solid rgba(255,255,255,0.07)" }}>
+              {user ? (
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  {user.photoURL && <img src={user.photoURL} alt="" style={{ width: 34, height: 34, borderRadius: "50%", border: "2px solid #4a7c59" }} />}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ color: "#e8e4d8", fontSize: 13, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{user.displayName}</div>
+                    <div style={{ color: "#4a7c59", fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{user.email}</div>
+                  </div>
+                  <button onClick={() => signOut(auth)} style={{ background: "none", border: "1px solid #3d5e45", borderRadius: 8, color: "#6b8f6b", cursor: "pointer", fontSize: 11, padding: "4px 8px" }}>
+                    {lang === "es" ? "Salir" : "Sign out"}
+                  </button>
                 </div>
+              ) : (
+                <button
+                  onClick={() => signInWithPopup(auth, provider).catch(() => {})}
+                  style={{ width: "100%", padding: "10px 14px", background: "#2d4a35", border: "1px solid #4a7c59", borderRadius: 10, color: "#e8e4d8", cursor: "pointer", fontSize: 13, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+                  <img src={icon("login", true)} alt="" style={{ width: 20, height: 20 }} />
+                  {lang === "es" ? "Iniciar sesión con Google" : "Sign in with Google"}
+                </button>
               )}
             </div>
+          )}
+
+          {/* Dark / Light mode toggle */}
+          <div style={{ padding: "10px 20px", borderTop: "1px solid rgba(255,255,255,0.07)" }}>
+            <button onClick={() => setDarkMode(d => !d)}
+              style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", background: "transparent", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 9, color: "#8fbc8f", cursor: "pointer", fontFamily: "'Lora',Georgia,serif", transition: "border-color 0.2s" }}>
+              <img src={icon(darkMode ? "theme-light" : "theme-dark", true)} alt="" style={{ width: 20, height: 20, flexShrink: 0 }} />
+              <span style={{ fontSize: 13 }}>{darkMode ? (lang === "es" ? "Modo claro" : "Light mode") : (lang === "es" ? "Modo oscuro" : "Dark mode")}</span>
+              <div style={{ marginLeft: "auto", width: 34, height: 20, borderRadius: 10, background: darkMode ? "#4a7c59" : "#3d5e45", position: "relative", transition: "background 0.25s", flexShrink: 0 }}>
+                <div style={{ width: 14, height: 14, borderRadius: "50%", background: "#e8e4d8", position: "absolute", top: 3, left: darkMode ? 17 : 3, transition: "left 0.25s" }} />
+              </div>
+            </button>
+          </div>
+
+          {/* Language selector */}
+          <div style={{ padding: "16px 20px", borderTop: "1px solid rgba(255,255,255,0.07)" }}>
+            <div style={{ color: "#3d5e45", fontSize: 10, letterSpacing: 2, textTransform: "uppercase", marginBottom: 10 }}>Idioma / Language</div>
+            <div style={{ display: "flex", gap: 8 }}>
+              {[{code:"es",label:"ES"},{code:"en",label:"EN"}].map(opt => (
+                <button key={opt.code} onClick={() => setLang(opt.code)}
+                  style={{ flex: 1, padding: "9px 8px", background: lang === opt.code ? "#4a7c59" : "rgba(255,255,255,0.05)", border: `1px solid ${lang === opt.code ? "#4a7c59" : "rgba(255,255,255,0.1)"}`, borderRadius: 9, color: "#e8e4d8", cursor: "pointer", fontSize: 14, fontWeight: lang === opt.code ? 700 : 400, letterSpacing: 1, textAlign: "center" }}>
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Legal links */}
+          <div style={{ padding: "10px 20px", borderTop: "1px solid rgba(255,255,255,0.07)", display: "flex", gap: 12 }}>
+            <a href={`${process.env.PUBLIC_URL}/privacy.html`} target="_blank" rel="noreferrer"
+              style={{ fontSize: 11, color: "#3d5e45", textDecoration: "none", flex: 1, textAlign: "center" }}>
+              {lang === "es" ? "Privacidad" : "Privacy"}
+            </a>
+            <span style={{ color: "#2d4a35", fontSize: 11 }}>·</span>
+            <a href={`${process.env.PUBLIC_URL}/terms.html`} target="_blank" rel="noreferrer"
+              style={{ fontSize: 11, color: "#3d5e45", textDecoration: "none", flex: 1, textAlign: "center" }}>
+              {lang === "es" ? "Términos" : "Terms"}
+            </a>
+          </div>
+
+          {/* App version */}
+          <div style={{ padding: "4px 20px 20px", color: "#2d4a35", fontSize: 10, letterSpacing: 1, textAlign: "center" }}>
+            Atrile · v1.0
+          </div>
+        </div>
+
+        {/* ── App Header (clean — just hamburger + logo) ── */}
+        <div style={{
+          background: "#1a2e22", padding: "12px 16px",
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+          boxShadow: "0 2px 12px rgba(0,0,0,0.15)",
+          overflow: "hidden", maxHeight: navHidden ? 0 : 64,
+          transition: "max-height 0.3s ease", flexShrink: 0,
+        }}>
+          {/* Hamburger */}
+          <button onClick={() => setDrawerOpen(true)}
+            style={{ background: "none", border: "none", color: "#e8e4d8", cursor: "pointer", fontSize: 22, lineHeight: 1, padding: "4px 8px 4px 0", display: "flex", flexDirection: "column", gap: 5, flexShrink: 0 }}>
+            <span style={{ display: "block", width: 22, height: 2, background: "#e8e4d8", borderRadius: 2 }} />
+            <span style={{ display: "block", width: 16, height: 2, background: "#8fbc8f", borderRadius: 2 }} />
+            <span style={{ display: "block", width: 22, height: 2, background: "#e8e4d8", borderRadius: 2 }} />
+          </button>
+
+          {/* Brand center */}
+          <img
+            src={`${process.env.PUBLIC_URL}/atrile-logo-dark.svg`}
+            alt="Atrile"
+            style={{ height: 36, objectFit: "contain", maxWidth: 160 }}
+          />
+
+          {/* Right: unread badge or current view label */}
+          <div style={{ minWidth: 40, display: "flex", justifyContent: "flex-end" }}>
+            {unreadCount > 0 && (
+              <button onClick={() => navigate("home")}
+                style={{ background: "#c0504d", border: "none", borderRadius: 12, color: "#fff", fontSize: 11, fontWeight: 700, padding: "3px 8px", cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }}>
+                <img src={icon("message", true)} alt="" style={{ width: 13, height: 13 }} />
+                {unreadCount}
+              </button>
+            )}
           </div>
         </div>
 
         {/* Content */}
-        <div style={{ maxWidth: 760, margin: "0 auto", padding: "24px 16px" }}>
+        <div style={(view === "scores" || view === "session") ? { flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" } : { maxWidth: 760, margin: "0 auto", padding: "24px 16px" }}>
           {view === "home" && (
-            <HomeView goals={goals} sessions={sessions} onStart={startNewSession} onContinue={() => setView("session")} activeSession={activeSession} />
+            <HomeView
+              goals={goals} sessions={sessions}
+              onStart={startNewSession} onContinue={() => setView("session")}
+              activeSession={activeSession}
+              teacherNotes={teacherNotes} studentId={studentId}
+              onSeenNotes={markNotesSeen} unreadCount={unreadCount}
+            />
           )}
           {view === "session" && activeSession && (
-            <SessionView session={activeSession} onUpdate={(s) => { setActiveSession(s); saveSession(s); }} onFinish={() => { saveSession(activeSession); setView("home"); }} />
+            <SessionView
+              session={activeSession}
+              onUpdate={(s) => { setActiveSession(s); saveSession(s); }}
+              onFinish={() => { saveSession(activeSession); setView("home"); }}
+              lang={lang}
+              onNavChange={setNavHidden}
+              onOpenDrawer={() => setDrawerOpen(true)}
+            />
           )}
           {view === "tools" && (
             <div>
-              <h2 style={{ fontFamily: "'Playfair Display', serif", color: "#2d4a35", marginBottom: 24, fontSize: 26 }}>{t.toolsTitle}</h2>
+              <h2 style={{ fontFamily: "'Playfair Display', serif", color: "var(--c-heading2)", marginBottom: 24, fontSize: 26 }}>{t.toolsTitle}</h2>
               <div style={{ display: "grid", gap: 20 }}>
                 <Metronome />
                 <Tuner />
@@ -1208,7 +1905,9 @@ export default function App() {
           )}
           {view === "goals"   && <GoalsView goals={goals} setGoals={setGoals} sessions={sessions} />}
           {view === "history" && <HistoryView sessions={sessions} />}
-          {view === "scores"  && <ScoreViewer lang={lang} />}
+          {view === "scores"  && <Suspense fallback={<div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",color:"#6b8f6b",fontSize:14}}>Cargando...</div>}><ScoreViewer lang={lang} onNavChange={setNavHidden} /></Suspense>}
+          {view === "classSession" && <ClassSessionView lang={lang} />}
+          {view === "teacher" && <Suspense fallback={null}><TeacherPortal embedded user={user} /></Suspense>}
         </div>
       </div>
     </LangCtx.Provider>

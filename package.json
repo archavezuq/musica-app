@@ -1,8 +1,13 @@
 {
-  "name": "musica-practica-app",
+  "name": "atrile",
   "version": "1.0.0",
   "private": true,
+  "homepage": "https://archavezuq.github.io/musica-app",
   "dependencies": {
+    "@capacitor/android": "^8.3.4",
+    "@capacitor/cli": "^8.3.4",
+    "@capacitor/core": "^8.3.4",
+    "firebase": "^12.12.1",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-scripts": "5.0.1"
@@ -10,11 +15,27 @@
   "scripts": {
     "start": "react-scripts start",
     "build": "react-scripts build",
+    "build:android": "cross-env PUBLIC_URL=/ react-scripts build",
     "test": "react-scripts test",
-    "eject": "react-scripts eject"
+    "eject": "react-scripts eject",
+    "predeploy": "npm run build",
+    "deploy": "gh-pages -d build",
+    "android": "npm run build:android && npx cap sync android && npx cap open android"
   },
   "browserslist": {
-    "production": [">0.2%", "not dead", "not op_mini all"],
-    "development": ["last 1 chrome version", "last 1 firefox version", "last 1 safari version"]
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  },
+  "devDependencies": {
+    "cross-env": "^10.1.0",
+    "gh-pages": "^6.3.0"
   }
 }
