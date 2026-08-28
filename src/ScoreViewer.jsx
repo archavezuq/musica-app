@@ -24,6 +24,19 @@ const TOOLS = [
   { id: "select",    icon: "move",      label: "Mover"      },
 ];
 
+// ── PDF page layout ────────────────────────────────────────────────────────────
+const PAGE_GAP = 12; // px between panes in two-page (spread) view
+
+// Scale so `perView` pages (1 = single, 2 = side-by-side spread) fit fully
+// inside the container — both dimensions, so the whole page is visible
+// without scrolling. Centering happens in the layout, not here.
+function computeFitZoom(vp, containerEl, perView) {
+  const gap    = perView === 2 ? PAGE_GAP : 0;
+  const availW = (containerEl.clientWidth - 4 - gap) / perView;
+  const availH = containerEl.clientHeight - 4;
+  return Math.max(0.3, +(Math.min(availW / vp.width, availH / vp.height)).toFixed(2));
+}
+
 // ── Drawing helpers ────────────────────────────────────────────────────────────
 function drawStroke(ctx, stroke) {
   if (!stroke.points || stroke.points.length < 2) return;
@@ -626,14 +639,19 @@ export default function ScoreViewer({ lang = "es", onNavChange = () => {} }) {
   const [imslpLoading,   setImslpLoading]   = useState(false);
   const [a4Freq,         setA4Freq]         = useState(440);
   const [showMetronome,  setShowMetronome]  = useState(false);
+  const [pagesPerView,   setPagesPerView]   = useState(1); // 1 = single page, 2 = side-by-side spread
 
   // ── Refs ───────────────────────────────────────────────────────────────────
   const pdfCanvasRef       = useRef(null);
   const annotCanvasRef     = useRef(null);
+  const pdfCanvasRef2      = useRef(null); // second pane — only used in two-page (spread) view
+  const annotCanvasRef2    = useRef(null);
   const fileInputRef       = useRef(null);
   const canvasContainerRef = useRef(null);
   const renderTaskRef      = useRef(null); // cancels in-progress renders on page/zoom change
   const pageObjRef         = useRef(null); // current PDF.js page object — cleaned up on navigation
+  const renderTaskRef2     = useRef(null); // same as above, for the second pane
+  const pageObjRef2        = useRef(null);
   const strokesRef         = useRef(strokes); // always-fresh ref so PDF render reads latest annotations
   const pageCacheRef       = useRef(new Map()); // pageNum → offscreen canvas (pre-rendered at current zoom)
   const prefetchTasksRef   = useRef(new Map()); // pageNum → renderTask (in-progress prefetch)
@@ -649,21 +667,19 @@ export default function ScoreViewer({ lang = "es", onNavChange = () => {} }) {
 
   useEffect(() => { zoomRef.current = zoom; }, [zoom]);
 
-  const strokeKey = `${docId}-${pageNum}`;
+  const strokeKey    = `${docId}-${pageNum}`;
+  const rightPageNum = pagesPerView === 2 && pageNum + 1 <= totalPages ? pageNum + 1 : null;
 
-  // ── Auto-fit zoom — scales the page to fill the container's full width ────
-  // (height is intentionally NOT a factor: the viewer scrolls vertically,
-  // so fitting to height on wide/landscape screens would leave the page
-  // narrower than the container — a blank margin on tablets.)
-  const fitToPage = useCallback((doc, pNum = 1) => {
+  // ── Auto-fit zoom — scales page(s) to fit fully inside the container ──────
+  const fitToPage = useCallback((doc, pNum = 1, perView = pagesPerView) => {
     if (!canvasContainerRef.current) return;
     doc.getPage(pNum).then(page => {
-      const vp     = page.getViewport({ scale: 1 });
-      const availW = canvasContainerRef.current.clientWidth - 4;
+      const vp = page.getViewport({ scale: 1 });
+      const z  = computeFitZoom(vp, canvasContainerRef.current, perView);
       page.cleanup();
-      setZoom(Math.max(0.3, +(availW / vp.width).toFixed(2)));
+      setZoom(z);
     });
-  }, []);
+  }, [pagesPerView]);
 
   // Re-fit whenever the container itself resizes (orientation change, window
   // resize, or a layout shift that doesn't fire a window "resize" event).
@@ -675,23 +691,33 @@ export default function ScoreViewer({ lang = "es", onNavChange = () => {} }) {
     return () => ro.disconnect();
   }, [pdfDoc, pageNum, fitToPage]);
 
+  // Re-fit when switching between single-page and two-page (spread) view —
+  // the per-page width available changes, so the old zoom no longer fits.
+  const prevPagesPerViewRef = useRef(pagesPerView);
+  useEffect(() => {
+    if (prevPagesPerViewRef.current === pagesPerView) return;
+    prevPagesPerViewRef.current = pagesPerView;
+    if (pdfDoc) fitToPage(pdfDoc, pageNum, pagesPerView);
+  }, [pagesPerView, pdfDoc, pageNum, fitToPage]);
+
   // ── Bluetooth pedal / keyboard page navigation ─────────────────────────────
   // Pedals (AirTurn, PageFlip, Donner, etc.) connect as BT HID keyboards and
   // send standard key events — no special API needed.
   useEffect(() => {
     if (!pdfDoc) return;
+    const step = pagesPerView === 2 ? 2 : 1;
     const handler = (e) => {
       if (["ArrowRight", "ArrowDown", "PageDown", " "].includes(e.key)) {
         e.preventDefault();
-        setPageNum(p => Math.min(totalPages, p + 1));
+        setPageNum(p => Math.min(totalPages, p + step));
       } else if (["ArrowLeft", "ArrowUp", "PageUp", "Backspace"].includes(e.key)) {
         e.preventDefault();
-        setPageNum(p => Math.max(1, p - 1));
+        setPageNum(p => Math.max(1, p - step));
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [pdfDoc, totalPages]);
+  }, [pdfDoc, totalPages, pagesPerView]);
 
   // ── Signal parent nav hide ─────────────────────────────────────────────────
   useEffect(() => {
@@ -784,65 +810,72 @@ export default function ScoreViewer({ lang = "es", onNavChange = () => {} }) {
     }).catch(() => {});
   }, []);
 
-  // ── Render PDF page ────────────────────────────────────────────────────────
+  // ── Render a single page into a given canvas pair ──────────────────────────
   // Uses pre-rendered cache when available (instant page turn), otherwise
-  // renders offscreen first then swaps atomically (no blank frame).
-  // strokes intentionally NOT in deps — annotation changes must not
-  // trigger a PDF re-render (that causes canvas resize → flicker).
-  useEffect(() => {
-    if (!pdfDoc || !pdfCanvasRef.current) return;
+  // renders offscreen first then swaps atomically (no blank frame). Shared by
+  // both the primary pane and, in two-page (spread) view, the second pane.
+  const renderPageInto = useCallback((pNum, cvs, ann, taskRef, pageRef, onDone) => {
+    if (!pdfDoc || !cvs || !ann || pNum < 1 || pNum > pdfDoc.numPages) return () => {};
 
     let cancelled = false;
 
-    renderTaskRef.current?.cancel();
-    renderTaskRef.current = null;
-    pageObjRef.current?.cleanup();
-    pageObjRef.current = null;
+    taskRef.current?.cancel();
+    taskRef.current = null;
+    pageRef.current?.cleanup();
+    pageRef.current = null;
 
     const applyCanvas = (offscreen) => {
       if (cancelled) return;
-      const cvs = pdfCanvasRef.current;
-      const ann = annotCanvasRef.current;
-      if (!cvs || !ann) return;
       cvs.width  = ann.width  = offscreen.width;
       cvs.height = ann.height = offscreen.height;
       cvs.getContext("2d").drawImage(offscreen, 0, 0);
-      redrawAll(ann, strokesRef.current[`${docId}-${pageNum}`] || []);
-      setRendering(false);
+      redrawAll(ann, strokesRef.current[`${docId}-${pNum}`] || []);
+      onDone?.();
       // Prefetch neighbors now that current page is painted
-      prefetchPage(pdfDoc, pageNum + 1, zoom);
-      prefetchPage(pdfDoc, pageNum - 1, zoom);
+      prefetchPage(pdfDoc, pNum + 1, zoom);
+      prefetchPage(pdfDoc, pNum - 1, zoom);
     };
 
     // Cache hit → instant display, no async wait
-    if (pageCacheRef.current.has(pageNum)) {
-      applyCanvas(pageCacheRef.current.get(pageNum));
-      return;
+    if (pageCacheRef.current.has(pNum)) {
+      applyCanvas(pageCacheRef.current.get(pNum));
+      return () => { cancelled = true; };
     }
 
-    setRendering(true);
-
-    pdfDoc.getPage(pageNum).then(page => {
+    pdfDoc.getPage(pNum).then(page => {
       if (cancelled) { page.cleanup(); return; }
-      pageObjRef.current = page;
+      pageRef.current = page;
       const vp = page.getViewport({ scale: zoom });
       const offscreen = document.createElement("canvas");
       offscreen.width  = vp.width;
       offscreen.height = vp.height;
       const task = page.render({ canvasContext: offscreen.getContext("2d"), viewport: vp });
-      renderTaskRef.current = task;
+      taskRef.current = task;
       task.promise
         .then(() => {
           page.cleanup();
-          pageObjRef.current = null;
-          pageCacheRef.current.set(pageNum, offscreen);
+          pageRef.current = null;
+          pageCacheRef.current.set(pNum, offscreen);
           applyCanvas(offscreen);
         })
-        .catch(() => { if (!cancelled) setRendering(false); });
-    }).catch(() => { if (!cancelled) setRendering(false); });
+        .catch(() => {});
+    }).catch(() => {});
 
     return () => { cancelled = true; };
-  }, [pdfDoc, pageNum, zoom, docId, prefetchPage]); // strokes intentionally excluded — see comment above
+  }, [pdfDoc, docId, zoom, prefetchPage]); // strokes intentionally excluded — annotation changes must not trigger a PDF re-render
+
+  // Primary pane (always shown)
+  useEffect(() => {
+    if (!pdfDoc || !pdfCanvasRef.current || !annotCanvasRef.current) return;
+    setRendering(true);
+    return renderPageInto(pageNum, pdfCanvasRef.current, annotCanvasRef.current, renderTaskRef, pageObjRef, () => setRendering(false));
+  }, [pdfDoc, pageNum, zoom, docId, renderPageInto]);
+
+  // Second pane — only rendered in two-page (spread) view
+  useEffect(() => {
+    if (!pdfDoc || pagesPerView !== 2 || !rightPageNum || !pdfCanvasRef2.current || !annotCanvasRef2.current) return;
+    return renderPageInto(rightPageNum, pdfCanvasRef2.current, annotCanvasRef2.current, renderTaskRef2, pageObjRef2);
+  }, [pdfDoc, rightPageNum, pagesPerView, zoom, docId, renderPageInto]);
 
   // Clear cache when zoom changes (cached canvases are at the old scale)
   useEffect(() => { clearPageCache(); }, [zoom, docId, clearPageCache]);
@@ -860,9 +893,8 @@ export default function ScoreViewer({ lang = "es", onNavChange = () => {} }) {
         // Calculate zoom here so setPdfDoc + setZoom batch into ONE render in React 18,
         // avoiding the wasted render at the stale zoom=1.5 default.
         doc.getPage(1).then(page => {
-          const vp     = page.getViewport({ scale: 1 });
-          const availW = (canvasContainerRef.current?.clientWidth ?? 400) - 4;
-          const newZoom = Math.max(0.3, +(availW / vp.width).toFixed(2));
+          const vp      = page.getViewport({ scale: 1 });
+          const newZoom = canvasContainerRef.current ? computeFitZoom(vp, canvasContainerRef.current, pagesPerView) : 1;
           page.cleanup();
           setPdfDoc(doc);
           setTotalPages(doc.numPages);
@@ -913,9 +945,8 @@ export default function ScoreViewer({ lang = "es", onNavChange = () => {} }) {
           .then(r => { if (!r.ok) throw r.status; return r.arrayBuffer(); })
           .then(buf => window.pdfjsLib.getDocument({ data: new Uint8Array(buf) }).promise)
           .then(doc => doc.getPage(1).then(page => {
-            const vp     = page.getViewport({ scale: 1 });
-            const availW = (canvasContainerRef.current?.clientWidth ?? 400) - 4;
-            const newZoom = Math.max(0.3, +(availW / vp.width).toFixed(2));
+            const vp      = page.getViewport({ scale: 1 });
+            const newZoom = canvasContainerRef.current ? computeFitZoom(vp, canvasContainerRef.current, pagesPerView) : 1;
             page.cleanup();
             setPdfDoc(doc); setTotalPages(doc.numPages); setPageNum(1); setZoom(newZoom); setLoading(false);
           }))
@@ -923,7 +954,7 @@ export default function ScoreViewer({ lang = "es", onNavChange = () => {} }) {
       })
       .build();
     picker.setVisible(true);
-  }, [fitToPage]);
+  }, [pagesPerView]);
 
   // ── Google Drive: request token then open Picker ───────────────────────────
   const openDrivePicker = useCallback(() => {
@@ -971,10 +1002,13 @@ export default function ScoreViewer({ lang = "es", onNavChange = () => {} }) {
     return { x: (src.clientX - rect.left) * scaleX, y: (src.clientY - rect.top) * scaleY };
   };
 
-  const onPointerDown = useCallback(e => {
-    if (!annotCanvasRef.current) return;
+  // pNum/canvasRef identify which pane (primary or, in spread view, the
+  // second one) a pointer interaction belongs to — pinch-zoom is shared
+  // (one global `zoom`), but drawn strokes must be saved under the right page.
+  const onPointerDown = useCallback((e, pNum, canvasRef) => {
+    if (!canvasRef.current) return;
     e.preventDefault();
-    annotCanvasRef.current.setPointerCapture(e.pointerId);
+    canvasRef.current.setPointerCapture(e.pointerId);
     activePtrRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (activePtrRef.current.size >= 2) {
       const [p1, p2] = [...activePtrRef.current.values()];
@@ -984,14 +1018,15 @@ export default function ScoreViewer({ lang = "es", onNavChange = () => {} }) {
     if (tool === "select") return;
     setDrawing(true);
     setCurrentStroke({
-      tool, points: [getPos(e, annotCanvasRef.current)],
+      pageNum: pNum,
+      tool, points: [getPos(e, canvasRef.current)],
       color: tool === "eraser" ? "#000000" : color,
       width: tool === "eraser" ? lineWidth * 6 : tool === "highlight" ? lineWidth * 4 : lineWidth,
     });
   }, [tool, color, lineWidth]);
 
-  const onPointerMove = useCallback(e => {
-    if (!annotCanvasRef.current) return;
+  const onPointerMove = useCallback((e, canvasRef) => {
+    if (!canvasRef.current) return;
     e.preventDefault();
     activePtrRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (pinchRef.current.active && activePtrRef.current.size >= 2) {
@@ -1000,10 +1035,10 @@ export default function ScoreViewer({ lang = "es", onNavChange = () => {} }) {
       setZoom(newZoom); return;
     }
     if (!drawing || !currentStroke) return;
-    const updated = { ...currentStroke, points: [...currentStroke.points, getPos(e, annotCanvasRef.current)] };
+    const updated = { ...currentStroke, points: [...currentStroke.points, getPos(e, canvasRef.current)] };
     setCurrentStroke(updated);
     // Draw only the new segment on top — no full redraw needed while dragging
-    drawStroke(annotCanvasRef.current.getContext("2d"), updated);
+    drawStroke(canvasRef.current.getContext("2d"), updated);
   }, [drawing, currentStroke]);
 
   const onPointerUp = useCallback(e => {
@@ -1011,15 +1046,17 @@ export default function ScoreViewer({ lang = "es", onNavChange = () => {} }) {
     if (activePtrRef.current.size < 2) pinchRef.current.active = false;
     if (!drawing || !currentStroke) return;
     setDrawing(false);
-    const key = `${docId}-${pageNum}`;
+    const strokePage = currentStroke.pageNum ?? pageNum;
+    const key = `${docId}-${strokePage}`;
     const newStrokes = { ...strokesRef.current, [key]: [...(strokesRef.current[key] || []), currentStroke] };
     // Redraw annotations imperatively — no state read, no PDF re-render
-    if (annotCanvasRef.current) redrawAll(annotCanvasRef.current, newStrokes[key]);
+    const targetCanvas = strokePage === rightPageNum ? annotCanvasRef2.current : annotCanvasRef.current;
+    if (targetCanvas) redrawAll(targetCanvas, newStrokes[key]);
     setStrokes(newStrokes);
     setUndoStack(u => [...u, strokesRef.current]);
     setRedoStack([]);
     setCurrentStroke(null);
-  }, [drawing, currentStroke, docId, pageNum]);
+  }, [drawing, currentStroke, docId, pageNum, rightPageNum]);
 
   const undo = () => {
     if (!undoStack.length) return;
@@ -1028,6 +1065,7 @@ export default function ScoreViewer({ lang = "es", onNavChange = () => {} }) {
     setStrokes(prev);
     setUndoStack(u => u.slice(0, -1));
     if (annotCanvasRef.current) redrawAll(annotCanvasRef.current, prev[strokeKey] || []);
+    if (annotCanvasRef2.current && rightPageNum) redrawAll(annotCanvasRef2.current, prev[`${docId}-${rightPageNum}`] || []);
   };
   const redo = () => {
     if (!redoStack.length) return;
@@ -1036,6 +1074,7 @@ export default function ScoreViewer({ lang = "es", onNavChange = () => {} }) {
     setStrokes(next);
     setRedoStack(r => r.slice(1));
     if (annotCanvasRef.current) redrawAll(annotCanvasRef.current, next[strokeKey] || []);
+    if (annotCanvasRef2.current && rightPageNum) redrawAll(annotCanvasRef2.current, next[`${docId}-${rightPageNum}`] || []);
   };
   const clearPage = () => {
     setUndoStack(u => [...u, strokesRef.current]);
@@ -1171,15 +1210,36 @@ export default function ScoreViewer({ lang = "es", onNavChange = () => {} }) {
           style={{ flex: 1, minHeight: 0, position: "relative", overflow: "auto", background: "#e8e4d8", cursor: tool === "select" ? "grab" : tool === "eraser" ? "cell" : "crosshair" }}
           className="sv-scroll">
 
-          <canvas ref={pdfCanvasRef} style={{ display: "block" }} />
-          <canvas ref={annotCanvasRef}
-            style={{ position: "absolute", top: 0, left: 0, touchAction: "none" }}
-            onPointerDown={onPointerDown}
-            onPointerMove={onPointerMove}
-            onPointerUp={onPointerUp}
-            onPointerLeave={onPointerUp}
-            onPointerCancel={onPointerUp}
-          />
+          {/* Page pane(s) — centered as a group; each pane owns its own
+              position:relative so its annotation canvas stays aligned with
+              its PDF canvas regardless of centering/spread layout. */}
+          <div style={{ display: "flex", justifyContent: "center", alignItems: "flex-start", gap: PAGE_GAP, width: "max-content", minWidth: "100%", boxSizing: "border-box" }}>
+            <div style={{ position: "relative", flexShrink: 0 }}>
+              <canvas ref={pdfCanvasRef} style={{ display: "block" }} />
+              <canvas ref={annotCanvasRef}
+                style={{ position: "absolute", top: 0, left: 0, touchAction: "none" }}
+                onPointerDown={e => onPointerDown(e, pageNum, annotCanvasRef)}
+                onPointerMove={e => onPointerMove(e, annotCanvasRef)}
+                onPointerUp={onPointerUp}
+                onPointerLeave={onPointerUp}
+                onPointerCancel={onPointerUp}
+              />
+            </div>
+
+            {pagesPerView === 2 && rightPageNum && (
+              <div style={{ position: "relative", flexShrink: 0 }}>
+                <canvas ref={pdfCanvasRef2} style={{ display: "block" }} />
+                <canvas ref={annotCanvasRef2}
+                  style={{ position: "absolute", top: 0, left: 0, touchAction: "none" }}
+                  onPointerDown={e => onPointerDown(e, rightPageNum, annotCanvasRef2)}
+                  onPointerMove={e => onPointerMove(e, annotCanvasRef2)}
+                  onPointerUp={onPointerUp}
+                  onPointerLeave={onPointerUp}
+                  onPointerCancel={onPointerUp}
+                />
+              </div>
+            )}
+          </div>
 
           {/* ── Floating: Tuner + A4 (top-left) ── */}
           <div style={{ position: "absolute", top: 10, left: 10, display: "flex", gap: 5, zIndex: 10 }}>
@@ -1211,12 +1271,12 @@ export default function ScoreViewer({ lang = "es", onNavChange = () => {} }) {
 
           {/* ── Floating: Page navigator (bottom-center) ── */}
           <div style={{ position: "absolute", bottom: 12, left: "50%", transform: "translateX(-50%)", display: "flex", alignItems: "center", gap: 6, zIndex: 10 }}>
-            <button onClick={() => setPageNum(p => Math.max(1, p - 1))} disabled={pageNum <= 1}
+            <button onClick={() => setPageNum(p => Math.max(1, p - (pagesPerView === 2 ? 2 : 1)))} disabled={pageNum <= 1}
               style={{ ...glassBtn(pageNum > 1), opacity: pageNum <= 1 ? 0.4 : 1, fontSize: 18 }}>‹</button>
             <span style={{ background: "rgba(8,16,10,0.72)", backdropFilter: "blur(14px)", color: "#e8e4d8", fontSize: 11, fontWeight: 700, borderRadius: 7, padding: "4px 10px", border: "1px solid rgba(255,255,255,0.1)", boxShadow: "0 2px 8px rgba(0,0,0,0.35)", fontFamily: "monospace" }}>
-              {pageNum} / {totalPages}
+              {rightPageNum ? `${pageNum}-${rightPageNum}` : pageNum} / {totalPages}
             </span>
-            <button onClick={() => setPageNum(p => Math.min(totalPages, p + 1))} disabled={pageNum >= totalPages}
+            <button onClick={() => setPageNum(p => Math.min(totalPages, p + (pagesPerView === 2 ? 2 : 1)))} disabled={pageNum >= totalPages}
               style={{ ...glassBtn(pageNum < totalPages), opacity: pageNum >= totalPages ? 0.4 : 1, fontSize: 18 }}>›</button>
           </div>
 
@@ -1319,8 +1379,13 @@ export default function ScoreViewer({ lang = "es", onNavChange = () => {} }) {
           <button onClick={() => setZoom(z => Math.min(4, +(z + 0.2).toFixed(1)))} style={tb(false)}>+</button>
           <div style={sep} />
 
-          {/* Fit to width */}
-          <button onClick={() => pdfDoc && fitToPage(pdfDoc, pageNum)} title="Ajustar ancho" style={tb(false)}>⊡</button>
+          {/* Fit page(s) to view */}
+          <button onClick={() => pdfDoc && fitToPage(pdfDoc, pageNum)} title="Ajustar página" style={tb(false)}>⊡</button>
+          <div style={sep} />
+
+          {/* Page layout: single page vs. two-page spread */}
+          <button onClick={() => setPagesPerView(1)} title="Una página" style={{ ...tb(pagesPerView === 1), fontSize: 11, fontWeight: 700 }}>1</button>
+          <button onClick={() => setPagesPerView(2)} title="Dos páginas" style={{ ...tb(pagesPerView === 2), fontSize: 11, fontWeight: 700 }}>2</button>
           <div style={sep} />
 
           {/* Metronome toggle */}
