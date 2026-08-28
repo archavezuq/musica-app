@@ -674,10 +674,18 @@ export default function ScoreViewer({ lang = "es", onNavChange = () => {} }) {
   const fitToPage = useCallback((doc, pNum = 1, perView = pagesPerView) => {
     if (!canvasContainerRef.current) return;
     doc.getPage(pNum).then(page => {
-      const vp = page.getViewport({ scale: 1 });
-      const z  = computeFitZoom(vp, canvasContainerRef.current, perView);
-      page.cleanup();
-      setZoom(z);
+      // Defer the container measurement to after the browser has actually
+      // laid out the current DOM (e.g. right after a pane was added/removed
+      // for a page-layout switch) — reading clientWidth/clientHeight in the
+      // same tick as that DOM change can catch a transient, not-yet-settled
+      // size and produce a wildly wrong fit.
+      requestAnimationFrame(() => {
+        if (!canvasContainerRef.current) return;
+        const vp = page.getViewport({ scale: 1 });
+        const z  = computeFitZoom(vp, canvasContainerRef.current, perView);
+        page.cleanup();
+        setZoom(z);
+      });
     });
   }, [pagesPerView]);
 
@@ -798,14 +806,19 @@ export default function ScoreViewer({ lang = "es", onNavChange = () => {} }) {
     pageCacheRef.current.clear();
   }, []);
 
-  // Pre-render a page into the cache without touching the visible canvas
+  // Pre-render a page into the cache without touching the visible canvas.
+  // Cache entries carry the zoom they were rendered at, so a stale entry
+  // from before a zoom change (e.g. switching page layout) is never mistaken
+  // for a fresh one — relying on effect ordering to clear it in time is not
+  // safe (a render effect can run, and read the cache, before the "clear
+  // cache on zoom change" effect does in the same commit).
   const prefetchPage = useCallback((doc, pNum, z) => {
     if (!doc || pNum < 1 || pNum > doc.numPages) return;
-    if (pageCacheRef.current.has(pNum)) return;
+    if (pageCacheRef.current.get(pNum)?.zoom === z) return;
     if (prefetchTasksRef.current.has(pNum)) return;
 
     doc.getPage(pNum).then(page => {
-      if (pageCacheRef.current.has(pNum)) { page.cleanup(); return; }
+      if (pageCacheRef.current.get(pNum)?.zoom === z) { page.cleanup(); return; }
       const vp = page.getViewport({ scale: z });
       const offscreen = document.createElement("canvas");
       offscreen.width = vp.width;
@@ -816,7 +829,7 @@ export default function ScoreViewer({ lang = "es", onNavChange = () => {} }) {
         .then(() => {
           page.cleanup();
           prefetchTasksRef.current.delete(pNum);
-          pageCacheRef.current.set(pNum, offscreen);
+          pageCacheRef.current.set(pNum, { canvas: offscreen, zoom: z });
         })
         .catch(() => { prefetchTasksRef.current.delete(pNum); });
     }).catch(() => {});
@@ -848,9 +861,10 @@ export default function ScoreViewer({ lang = "es", onNavChange = () => {} }) {
       prefetchPage(pdfDoc, pNum - 1, zoom);
     };
 
-    // Cache hit → instant display, no async wait
-    if (pageCacheRef.current.has(pNum)) {
-      applyCanvas(pageCacheRef.current.get(pNum));
+    // Cache hit (same page AND same zoom) → instant display, no async wait
+    const cached = pageCacheRef.current.get(pNum);
+    if (cached?.zoom === zoom) {
+      applyCanvas(cached.canvas);
       return () => { cancelled = true; };
     }
 
@@ -867,7 +881,7 @@ export default function ScoreViewer({ lang = "es", onNavChange = () => {} }) {
         .then(() => {
           page.cleanup();
           pageRef.current = null;
-          pageCacheRef.current.set(pNum, offscreen);
+          pageCacheRef.current.set(pNum, { canvas: offscreen, zoom });
           applyCanvas(offscreen);
         })
         .catch(() => {});
