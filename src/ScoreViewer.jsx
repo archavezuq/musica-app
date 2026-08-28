@@ -691,6 +691,18 @@ export default function ScoreViewer({ lang = "es", onNavChange = () => {} }) {
     return () => ro.disconnect();
   }, [pdfDoc, pageNum, fitToPage]);
 
+  // Fit page 1 the moment a *newly opened* document's canvas container
+  // mounts (its real size can only be measured once pdfDoc is set and the
+  // canvas area renders — see openLocalFile / showDrivePicker). Guarded by
+  // docId so it runs exactly once per opened file, not on every re-render.
+  const fittedDocRef = useRef(null);
+  useEffect(() => {
+    if (!pdfDoc || !canvasContainerRef.current) return;
+    if (fittedDocRef.current === docId) return;
+    fittedDocRef.current = docId;
+    fitToPage(pdfDoc, 1, pagesPerView);
+  }, [pdfDoc, docId, pagesPerView, fitToPage]);
+
   // Re-fit when switching between single-page and two-page (spread) view —
   // the per-page width available changes, so the old zoom no longer fits.
   const prevPagesPerViewRef = useRef(pagesPerView);
@@ -889,19 +901,14 @@ export default function ScoreViewer({ lang = "es", onNavChange = () => {} }) {
     setDocId(`local-${file.name}-${file.size}`);
     const reader = new FileReader();
     reader.onload = ev => {
+      // Zoom is NOT computed here: the canvas container only mounts once
+      // pdfDoc is set, so its size can't be measured yet — the "fit new
+      // document" effect below does the real fit right after mount.
       window.pdfjsLib.getDocument({ data: new Uint8Array(ev.target.result) }).promise.then(doc => {
-        // Calculate zoom here so setPdfDoc + setZoom batch into ONE render in React 18,
-        // avoiding the wasted render at the stale zoom=1.5 default.
-        doc.getPage(1).then(page => {
-          const vp      = page.getViewport({ scale: 1 });
-          const newZoom = canvasContainerRef.current ? computeFitZoom(vp, canvasContainerRef.current, pagesPerView) : 1;
-          page.cleanup();
-          setPdfDoc(doc);
-          setTotalPages(doc.numPages);
-          setPageNum(1);
-          setZoom(newZoom);
-          setLoading(false);
-        });
+        setPdfDoc(doc);
+        setTotalPages(doc.numPages);
+        setPageNum(1);
+        setLoading(false);
       });
     };
     reader.readAsArrayBuffer(file);
@@ -944,17 +951,12 @@ export default function ScoreViewer({ lang = "es", onNavChange = () => {} }) {
         })
           .then(r => { if (!r.ok) throw r.status; return r.arrayBuffer(); })
           .then(buf => window.pdfjsLib.getDocument({ data: new Uint8Array(buf) }).promise)
-          .then(doc => doc.getPage(1).then(page => {
-            const vp      = page.getViewport({ scale: 1 });
-            const newZoom = canvasContainerRef.current ? computeFitZoom(vp, canvasContainerRef.current, pagesPerView) : 1;
-            page.cleanup();
-            setPdfDoc(doc); setTotalPages(doc.numPages); setPageNum(1); setZoom(newZoom); setLoading(false);
-          }))
+          .then(doc => { setPdfDoc(doc); setTotalPages(doc.numPages); setPageNum(1); setLoading(false); })
           .catch(() => setLoading(false));
       })
       .build();
     picker.setVisible(true);
-  }, [pagesPerView]);
+  }, []);
 
   // ── Google Drive: request token then open Picker ───────────────────────────
   const openDrivePicker = useCallback(() => {
