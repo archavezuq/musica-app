@@ -1125,7 +1125,7 @@ export default function ScoreViewer({ lang = "es", onNavChange = () => {} }) {
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%", background: "#0b1610", overflow: "hidden" }}>
+    <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0, background: "#0b1610", overflow: "hidden" }}>
       <style>{`
         @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.25}}
         .sv-scroll::-webkit-scrollbar{display:none}
