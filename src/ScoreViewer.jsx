@@ -651,23 +651,28 @@ export default function ScoreViewer({ lang = "es", onNavChange = () => {} }) {
 
   const strokeKey = `${docId}-${pageNum}`;
 
-  // ── Auto-fit zoom — fits full page in the visible canvas area ─────────────
+  // ── Auto-fit zoom — scales the page to fill the container's full width ────
+  // (height is intentionally NOT a factor: the viewer scrolls vertically,
+  // so fitting to height on wide/landscape screens would leave the page
+  // narrower than the container — a blank margin on tablets.)
   const fitToPage = useCallback((doc, pNum = 1) => {
     if (!canvasContainerRef.current) return;
     doc.getPage(pNum).then(page => {
       const vp     = page.getViewport({ scale: 1 });
-      const availW = canvasContainerRef.current.clientWidth  - 4;
-      const availH = canvasContainerRef.current.clientHeight - 4;
+      const availW = canvasContainerRef.current.clientWidth - 4;
       page.cleanup();
-      setZoom(+(Math.max(0.3, Math.min(availW / vp.width, availH / vp.height))).toFixed(2));
+      setZoom(Math.max(0.3, +(availW / vp.width).toFixed(2)));
     });
   }, []);
 
+  // Re-fit whenever the container itself resizes (orientation change, window
+  // resize, or a layout shift that doesn't fire a window "resize" event).
   useEffect(() => {
-    if (!pdfDoc) return;
-    const handler = () => fitToPage(pdfDoc, pageNum);
-    window.addEventListener("resize", handler);
-    return () => window.removeEventListener("resize", handler);
+    if (!pdfDoc || !canvasContainerRef.current) return;
+    const el = canvasContainerRef.current;
+    const ro = new ResizeObserver(() => fitToPage(pdfDoc, pageNum));
+    ro.observe(el);
+    return () => ro.disconnect();
   }, [pdfDoc, pageNum, fitToPage]);
 
   // ── Bluetooth pedal / keyboard page navigation ─────────────────────────────
@@ -856,9 +861,8 @@ export default function ScoreViewer({ lang = "es", onNavChange = () => {} }) {
         // avoiding the wasted render at the stale zoom=1.5 default.
         doc.getPage(1).then(page => {
           const vp     = page.getViewport({ scale: 1 });
-          const availW = (canvasContainerRef.current?.clientWidth  ?? 400) - 4;
-          const availH = (canvasContainerRef.current?.clientHeight ?? 600) - 4;
-          const newZoom = Math.max(0.3, +(Math.min(availW / vp.width, availH / vp.height)).toFixed(2));
+          const availW = (canvasContainerRef.current?.clientWidth ?? 400) - 4;
+          const newZoom = Math.max(0.3, +(availW / vp.width).toFixed(2));
           page.cleanup();
           setPdfDoc(doc);
           setTotalPages(doc.numPages);
@@ -910,9 +914,8 @@ export default function ScoreViewer({ lang = "es", onNavChange = () => {} }) {
           .then(buf => window.pdfjsLib.getDocument({ data: new Uint8Array(buf) }).promise)
           .then(doc => doc.getPage(1).then(page => {
             const vp     = page.getViewport({ scale: 1 });
-            const availW = (canvasContainerRef.current?.clientWidth  ?? 400) - 4;
-            const availH = (canvasContainerRef.current?.clientHeight ?? 600) - 4;
-            const newZoom = Math.max(0.3, +(Math.min(availW / vp.width, availH / vp.height)).toFixed(2));
+            const availW = (canvasContainerRef.current?.clientWidth ?? 400) - 4;
+            const newZoom = Math.max(0.3, +(availW / vp.width).toFixed(2));
             page.cleanup();
             setPdfDoc(doc); setTotalPages(doc.numPages); setPageNum(1); setZoom(newZoom); setLoading(false);
           }))
