@@ -1688,7 +1688,7 @@ export default function App() {
 
   return (
     <LangCtx.Provider value={{ lang, t, setLang, darkMode }}>
-      <div data-theme={darkMode ? "dark" : "light"} style={{ minHeight: "100vh", display: "flex", flexDirection: "column", background: "var(--c-bg)", fontFamily: "'Lora', Georgia, serif", color: "var(--c-text)" }}>
+      <div data-theme={darkMode ? "dark" : "light"} style={{ minHeight: "100dvh", display: "flex", flexDirection: "column", background: "var(--c-bg)", fontFamily: "'Lora', Georgia, serif", color: "var(--c-text)" }}>
         <style>{`
           @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;0,900;1,400&family=Lora:wght@400;500;600&family=Geist+Mono:wght@300;400;500&display=swap');
           *{box-sizing:border-box;margin:0;padding:0}

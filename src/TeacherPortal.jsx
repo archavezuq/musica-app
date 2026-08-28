@@ -435,7 +435,7 @@ export default function TeacherPortal({ embedded = false, user = null }) {
   );
 
   return embedded ? inner : (
-    <div style={{ minHeight: "100vh", background: "#1a2e22", color: "#e8e4d8", fontFamily: "'Lora', Georgia, serif", padding: "24px 16px" }}>
+    <div style={{ minHeight: "100dvh", background: "#1a2e22", color: "#e8e4d8", fontFamily: "'Lora', Georgia, serif", padding: "24px 16px" }}>
       {inner}
     </div>
   );
