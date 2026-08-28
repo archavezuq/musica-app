@@ -1,12 +1,12 @@
 {
   "files": {
-    "main.js": "/musica-app/static/js/main.398b5b14.js",
-    "static/js/512.697f5be9.chunk.js": "/musica-app/static/js/512.697f5be9.chunk.js",
+    "main.js": "/musica-app/static/js/main.466b0ad7.js",
+    "static/js/512.3a5ab0b4.chunk.js": "/musica-app/static/js/512.3a5ab0b4.chunk.js",
     "index.html": "/musica-app/index.html",
-    "main.398b5b14.js.map": "/musica-app/static/js/main.398b5b14.js.map",
-    "512.697f5be9.chunk.js.map": "/musica-app/static/js/512.697f5be9.chunk.js.map"
+    "main.466b0ad7.js.map": "/musica-app/static/js/main.466b0ad7.js.map",
+    "512.3a5ab0b4.chunk.js.map": "/musica-app/static/js/512.3a5ab0b4.chunk.js.map"
   },
   "entrypoints": [
-    "static/js/main.398b5b14.js"
+    "static/js/main.466b0ad7.js"
   ]
 }
