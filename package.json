@@ -7,6 +7,7 @@
     "@capacitor/android": "^8.3.4",
     "@capacitor/cli": "^8.3.4",
     "@capacitor/core": "^8.3.4",
+    "@capacitor/ios": "^8.3.4",
     "firebase": "^12.12.1",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
@@ -20,7 +21,9 @@
     "eject": "react-scripts eject",
     "predeploy": "npm run build",
     "deploy": "gh-pages -d build",
-    "android": "npm run build:android && npx cap sync android && npx cap open android"
+    "android": "npm run build:android && npx cap sync android && npx cap open android",
+    "build:ios": "cross-env PUBLIC_URL=/ react-scripts build",
+    "ios": "npm run build:ios && npx cap sync ios && npx cap open ios"
   },
   "browserslist": {
     "production": [
